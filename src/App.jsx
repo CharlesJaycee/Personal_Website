@@ -3,19 +3,70 @@ import {
   Sun, Moon, ArrowRight, Download, ExternalLink, MessageSquare, 
   Send, X, CheckCircle2, Clock, Zap, Code, Database, Server, 
   Globe, Bot, User, Sparkles, ChevronRight, GraduationCap, Phone, 
-  Mail, MapPin, Award, Layers, Terminal
+  Mail, MapPin, Award, Layers, Terminal, Volume2, VolumeX, AlertCircle, SkipForward
 } from 'lucide-react';
 
 // Import your profile photos from assets
 import profileHome from './assets/profile-home.jpg';
 import profileAbout from './assets/profile-about.jpg';
 
+// Reusable Scroll Reveal wrapper component
+function Reveal({ children, delay = 0, className = '' }) {
+  const [isVisible, setIsVisible] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsVisible(true);
+          observer.unobserve(entry.target);
+        }
+      },
+      { threshold: 0.12 }
+    );
+
+    if (ref.current) {
+      observer.observe(ref.current);
+    }
+
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <div
+      ref={ref}
+      style={{ transitionDelay: `${delay}ms` }}
+      className={`transition-all duration-700 ease-out transform ${
+        isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
+      } ${className}`}
+    >
+      {children}
+    </div>
+  );
+}
+
 export default function App() {
+  const WEB3FORMS_ACCESS_KEY = '08f1ece3-66f7-4524-9267-bb6c572eb665';
+
   const [loading, setLoading] = useState(true);
   const [progress, setProgress] = useState(0);
   const [darkMode, setDarkMode] = useState(false);
   const [activeSection, setActiveSection] = useState('home');
   const [selectedProject, setSelectedProject] = useState(null);
+
+  // 4-Track Ambient Background Playlist
+  const playlist = [
+    { title: 'Track 1', src: './track1.mp3' },
+    { title: 'Track 2', src: './track2.mp3' },
+    { title: 'Track 3', src: './track3.mp3' },
+    { title: 'Track 4', src: './track4.mp3' }
+  ];
+  const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
+  const [isPlayingMusic, setIsPlayingMusic] = useState(false);
+  const audioRef = useRef(null);
+
+  // Chatbot state
   const [chatOpen, setChatOpen] = useState(false);
   const [chatMessages, setChatMessages] = useState([
     {
@@ -28,8 +79,10 @@ export default function App() {
   const [chatInput, setChatInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const chatBottomRef = useRef(null);
+
+  // Contact form state
   const [formData, setFormData] = useState({ name: '', email: '', message: '' });
-  const [formSubmitted, setFormSubmitted] = useState(false);
+  const [formStatus, setFormStatus] = useState('idle'); // 'idle' | 'sending' | 'success' | 'error'
 
   // Typing animation state for Hero title
   const fullTitle = "Hi, I'm Charles Jaycee";
@@ -88,6 +141,34 @@ export default function App() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  const toggleMusic = () => {
+    if (!audioRef.current) return;
+    if (isPlayingMusic) {
+      audioRef.current.pause();
+      setIsPlayingMusic(false);
+    } else {
+      audioRef.current.volume = 0.25;
+      audioRef.current
+        .play()
+        .then(() => setIsPlayingMusic(true))
+        .catch(() => setIsPlayingMusic(false));
+    }
+  };
+
+  const nextTrack = () => {
+    const nextIndex = (currentTrackIndex + 1) % playlist.length;
+    setCurrentTrackIndex(nextIndex);
+    setTimeout(() => {
+      if (audioRef.current) {
+        audioRef.current.volume = 0.25;
+        audioRef.current
+          .play()
+          .then(() => setIsPlayingMusic(true))
+          .catch(() => setIsPlayingMusic(false));
+      }
+    }, 50);
+  };
+
   const scrollToSection = (id) => {
     setActiveSection(id);
     const el = document.getElementById(id);
@@ -143,14 +224,41 @@ export default function App() {
     }, 1000);
   };
 
-  const handleContactSubmit = (e) => {
+  const handleContactSubmit = async (e) => {
     e.preventDefault();
     if (!formData.name || !formData.email || !formData.message) return;
-    setFormSubmitted(true);
-    setTimeout(() => {
-      setFormSubmitted(false);
-      setFormData({ name: '', email: '', message: '' });
-    }, 4000);
+
+    setFormStatus('sending');
+
+    try {
+      const response = await fetch('https://api.web3forms.com/submit', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json'
+        },
+        body: JSON.stringify({
+          access_key: WEB3FORMS_ACCESS_KEY,
+          name: formData.name,
+          email: formData.email,
+          message: formData.message,
+          subject: `New Portfolio Message from ${formData.name}`
+        })
+      });
+
+      const result = await response.json();
+      if (result.success) {
+        setFormStatus('success');
+        setFormData({ name: '', email: '', message: '' });
+        setTimeout(() => setFormStatus('idle'), 5000);
+      } else {
+        setFormStatus('error');
+        setTimeout(() => setFormStatus('idle'), 4000);
+      }
+    } catch {
+      setFormStatus('error');
+      setTimeout(() => setFormStatus('idle'), 4000);
+    }
   };
 
   const projects = [
@@ -210,6 +318,14 @@ export default function App() {
   return (
     <div className={darkMode ? 'dark bg-zinc-950 text-zinc-100 min-h-screen font-sans selection:bg-zinc-700 selection:text-white transition-colors duration-300' : 'bg-[#f7f8fa] text-zinc-900 min-h-screen font-sans selection:bg-zinc-300 selection:text-black transition-colors duration-300'}>
       
+      {/* Multi-track Playlist Audio Player */}
+      <audio
+        ref={audioRef}
+        src={playlist[currentTrackIndex].src}
+        onEnded={nextTrack}
+        preload="none"
+      />
+
       {loading && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-white dark:bg-zinc-950 transition-opacity duration-500">
           <div className="text-center space-y-4 px-4">
@@ -262,9 +378,39 @@ export default function App() {
           </div>
 
           <div className="flex items-center space-x-2">
+            {/* Play / Mute Music Button */}
+            <button
+              onClick={toggleMusic}
+              aria-label="Toggle Background Music"
+              title={isPlayingMusic ? `Playing: ${playlist[currentTrackIndex].title}` : 'Play Ambient Music'}
+              className={`p-2 rounded-full border transition-all duration-300 cursor-pointer ${
+                isPlayingMusic
+                  ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
+                  : 'bg-zinc-100/80 dark:bg-zinc-800/80 border-zinc-200/80 dark:border-zinc-700/80 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+              }`}
+            >
+              {isPlayingMusic ? (
+                <Volume2 className="w-4 h-4 animate-pulse" />
+              ) : (
+                <VolumeX className="w-4 h-4" />
+              )}
+            </button>
+
+            {/* Next Track Button */}
+            <button
+              onClick={nextTrack}
+              aria-label="Next Track"
+              title={`Next Track (${playlist[(currentTrackIndex + 1) % playlist.length].title})`}
+              className="p-2 rounded-full bg-zinc-100/80 dark:bg-zinc-800/80 border border-zinc-200/80 dark:border-zinc-700/80 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-all duration-300 cursor-pointer"
+            >
+              <SkipForward className="w-4 h-4" />
+            </button>
+
+            {/* Dark / Light Theme Toggle */}
             <button
               onClick={() => setDarkMode(!darkMode)}
               aria-label="Toggle Theme"
+              title={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
               className="p-2 rounded-full bg-sky-500/10 hover:bg-sky-500/20 dark:bg-sky-400/10 dark:hover:bg-sky-400/20 border border-sky-500/20 dark:border-sky-400/20 transition-all duration-300 cursor-pointer"
             >
               {darkMode ? (
@@ -308,8 +454,8 @@ export default function App() {
                 onClick={(e) => { e.preventDefault(); scrollToSection('contacts'); }}
                 className="inline-flex items-center justify-center px-6 py-3 rounded-xl border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-800 dark:text-zinc-200 font-medium text-sm transition gap-2"
               >
-                Download CV 
-                <Download className="w-4 h-4 text-zinc-500" />
+                Get in Touch 
+                <Mail className="w-4 h-4 text-zinc-500" />
               </a>
             </div>
 
@@ -403,114 +549,124 @@ export default function App() {
         </section>
 
         <section id="about" className="max-w-5xl mx-auto px-6 py-16">
-          <div className="text-center space-y-2 mb-12">
-            <span className="text-xs uppercase tracking-[0.25em] font-semibold text-zinc-400 dark:text-zinc-500">
-              DISCOVER
-            </span>
-            <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight text-zinc-900 dark:text-white">
-              About Me
-            </h2>
-          </div>
+          <Reveal>
+            <div className="text-center space-y-2 mb-12">
+              <span className="text-xs uppercase tracking-[0.25em] font-semibold text-zinc-400 dark:text-zinc-500">
+                DISCOVER
+              </span>
+              <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight text-zinc-900 dark:text-white">
+                About Me
+              </h2>
+            </div>
+          </Reveal>
 
           <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-            <div className="md:col-span-4 bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 rounded-3xl p-6 flex flex-col items-center justify-center text-center shadow-sm relative overflow-hidden group">
-              <div className="w-44 h-56 rounded-2xl overflow-hidden mb-4 border border-zinc-300 dark:border-zinc-700 shadow-md">
-                <img 
-                  src={profileAbout} 
-                  alt="Charles Jaycee Portrait" 
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                />
+            <Reveal delay={100} className="md:col-span-4">
+              <div className="h-full bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 rounded-3xl p-6 flex flex-col items-center justify-center text-center shadow-sm relative overflow-hidden group">
+                <div className="w-44 h-56 rounded-2xl overflow-hidden mb-4 border border-zinc-300 dark:border-zinc-700 shadow-md">
+                  <img 
+                    src={profileAbout} 
+                    alt="Charles Jaycee Portrait" 
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  />
+                </div>
+                <h3 className="font-bold text-lg text-zinc-900 dark:text-white">
+                  Charles Jaycee L. Grico
+                </h3>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                  BSIT Student @ Adamson University
+                </p>
               </div>
-              <h3 className="font-bold text-lg text-zinc-900 dark:text-white">
-                Charles Jaycee L. Grico
-              </h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-                BSIT Student @ Adamson University
-              </p>
-            </div>
+            </Reveal>
 
             <div className="md:col-span-8 flex flex-col space-y-6">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                <div className="bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 rounded-3xl p-6 shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 transition">
-                  <h3 className="font-bold text-lg text-zinc-900 dark:text-white mb-3">
-                    Who Am I
-                  </h3>
-                  <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                    I am a Bachelor of Science in Information Technology (BSIT) student at Adamson University dedicated to building clean, accessible web interfaces and software solutions.
-                  </p>
-                </div>
+                <Reveal delay={200}>
+                  <div className="h-full bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 rounded-3xl p-6 shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 transition">
+                    <h3 className="font-bold text-lg text-zinc-900 dark:text-white mb-3">
+                      Who Am I
+                    </h3>
+                    <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                      I am a Bachelor of Science in Information Technology (BSIT) student at Adamson University dedicated to building clean, accessible web interfaces and software solutions.
+                    </p>
+                  </div>
+                </Reveal>
 
-                <div className="bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 rounded-3xl p-6 shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 transition">
-                  <h3 className="font-bold text-lg text-zinc-900 dark:text-white mb-3">
-                    My Approach
-                  </h3>
-                  <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                    I emphasize clean code structure, object-oriented principles, responsive layouts, and modern front-end practices in every academic project.
-                  </p>
-                </div>
+                <Reveal delay={300}>
+                  <div className="h-full bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 rounded-3xl p-6 shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 transition">
+                    <h3 className="font-bold text-lg text-zinc-900 dark:text-white mb-3">
+                      My Approach
+                    </h3>
+                    <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                      I emphasize clean code structure, object-oriented principles, responsive layouts, and modern front-end practices in every academic project.
+                    </p>
+                  </div>
+                </Reveal>
               </div>
 
-              <div className="bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 rounded-3xl p-6 shadow-sm">
-                <h3 className="font-bold text-lg text-zinc-900 dark:text-white mb-6 border-b border-zinc-100 dark:border-zinc-800 pb-3">
-                  Personal Details
-                </h3>
+              <Reveal delay={400}>
+                <div className="bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 rounded-3xl p-6 shadow-sm">
+                  <h3 className="font-bold text-lg text-zinc-900 dark:text-white mb-6 border-b border-zinc-100 dark:border-zinc-800 pb-3">
+                    Personal Details
+                  </h3>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-6 gap-x-8">
-                  <div>
-                    <span className="text-[11px] uppercase tracking-wider font-semibold text-zinc-400 dark:text-zinc-500 block">
-                      NAME
-                    </span>
-                    <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200 mt-0.5 block">
-                      Charles Jaycee L. Grico
-                    </span>
-                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-6 gap-x-8">
+                    <div>
+                      <span className="text-[11px] uppercase tracking-wider font-semibold text-zinc-400 dark:text-zinc-500 block">
+                        NAME
+                      </span>
+                      <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200 mt-0.5 block">
+                        Charles Jaycee L. Grico
+                      </span>
+                    </div>
 
-                  <div>
-                    <span className="text-[11px] uppercase tracking-wider font-semibold text-zinc-400 dark:text-zinc-500 block">
-                      LOCATION
-                    </span>
-                    <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200 mt-0.5 block">
-                      Philippines
-                    </span>
-                  </div>
+                    <div>
+                      <span className="text-[11px] uppercase tracking-wider font-semibold text-zinc-400 dark:text-zinc-500 block">
+                        LOCATION
+                      </span>
+                      <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200 mt-0.5 block">
+                        Philippines
+                      </span>
+                    </div>
 
-                  <div>
-                    <span className="text-[11px] uppercase tracking-wider font-semibold text-zinc-400 dark:text-zinc-500 block">
-                      DEGREE PROGRAM
-                    </span>
-                    <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200 mt-0.5 block">
-                      BSIT (Information Technology)
-                    </span>
-                  </div>
+                    <div>
+                      <span className="text-[11px] uppercase tracking-wider font-semibold text-zinc-400 dark:text-zinc-500 block">
+                        DEGREE PROGRAM
+                      </span>
+                      <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200 mt-0.5 block">
+                        BSIT (Information Technology)
+                      </span>
+                    </div>
 
-                  <div>
-                    <span className="text-[11px] uppercase tracking-wider font-semibold text-zinc-400 dark:text-zinc-500 block">
-                      GWA
-                    </span>
-                    <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200 mt-0.5 block">
-                      1.00
-                    </span>
-                  </div>
+                    <div>
+                      <span className="text-[11px] uppercase tracking-wider font-semibold text-zinc-400 dark:text-zinc-500 block">
+                        GWA
+                      </span>
+                      <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200 mt-0.5 block">
+                        1.00
+                      </span>
+                    </div>
 
-                  <div>
-                    <span className="text-[11px] uppercase tracking-wider font-semibold text-zinc-400 dark:text-zinc-500 block">
-                      EMAIL
-                    </span>
-                    <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200 mt-0.5 block">
-                      charlesjayceegrico@gmail.com
-                    </span>
-                  </div>
+                    <div>
+                      <span className="text-[11px] uppercase tracking-wider font-semibold text-zinc-400 dark:text-zinc-500 block">
+                        EMAIL
+                      </span>
+                      <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200 mt-0.5 block">
+                        charlesjayceegrico@gmail.com
+                      </span>
+                    </div>
 
-                  <div>
-                    <span className="text-[11px] uppercase tracking-wider font-semibold text-zinc-400 dark:text-zinc-500 block">
-                      EDUCATION
-                    </span>
-                    <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200 mt-0.5 block">
-                      Adamson University
-                    </span>
+                    <div>
+                      <span className="text-[11px] uppercase tracking-wider font-semibold text-zinc-400 dark:text-zinc-500 block">
+                        EDUCATION
+                      </span>
+                      <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200 mt-0.5 block">
+                        Adamson University
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
+              </Reveal>
             </div>
           </div>
         </section>
@@ -531,68 +687,76 @@ export default function App() {
         </div>
 
         <section id="educational" className="max-w-5xl mx-auto px-6 py-16">
-          <div className="text-center space-y-2 mb-14">
-            <span className="text-xs uppercase tracking-[0.25em] font-semibold text-zinc-400 dark:text-zinc-500">
-              CAREER & ACADEMIC PATH
-            </span>
-            <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight text-zinc-900 dark:text-white">
-              Academic & Tech Experience
-            </h2>
-          </div>
+          <Reveal>
+            <div className="text-center space-y-2 mb-14">
+              <span className="text-xs uppercase tracking-[0.25em] font-semibold text-zinc-400 dark:text-zinc-500">
+                CAREER & ACADEMIC PATH
+              </span>
+              <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight text-zinc-900 dark:text-white">
+                Academic & Tech Experience
+              </h2>
+            </div>
+          </Reveal>
 
           <div className="relative border-l-2 border-zinc-200 dark:border-zinc-800 ml-4 md:ml-32 space-y-12">
             {experiences.map((exp, index) => (
-              <div key={index} className="relative pl-8 md:pl-10 group">
-                <div className="absolute -left-[9px] top-1.5 w-4 h-4 rounded-full bg-white dark:bg-zinc-950 border-2 border-zinc-900 dark:border-zinc-100 group-hover:scale-125 transition-transform" />
-                <div className="md:absolute md:-left-36 md:top-1.5 text-xs font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-2 md:mb-0">
-                  {exp.year}
-                </div>
-                <div className="bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 rounded-3xl p-6 sm:p-8 shadow-sm hover:shadow-md transition">
-                  <h3 className="text-xl font-bold text-zinc-900 dark:text-white">
-                    {exp.role}
-                  </h3>
-                  <span className="text-xs font-semibold tracking-wider text-zinc-400 dark:text-zinc-500 uppercase block mt-1 mb-4">
-                    {exp.company}
-                  </span>
-                  <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed mb-6">
-                    {exp.desc}
-                  </p>
-                  <div className="flex flex-wrap gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800/80">
-                    {exp.tech.map((t, idx) => (
-                      <span 
-                        key={idx}
-                        className="px-3 py-1 rounded-full bg-zinc-100 dark:bg-zinc-800 text-[11px] font-semibold text-zinc-600 dark:text-zinc-300 border border-zinc-200/50 dark:border-zinc-700/50"
-                      >
-                        {t}
-                      </span>
-                    ))}
+              <Reveal key={index} delay={index * 150}>
+                <div className="relative pl-8 md:pl-10 group">
+                  <div className="absolute -left-[9px] top-1.5 w-4 h-4 rounded-full bg-white dark:bg-zinc-950 border-2 border-zinc-900 dark:border-zinc-100 group-hover:scale-125 transition-transform" />
+                  <div className="md:absolute md:-left-36 md:top-1.5 text-xs font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-2 md:mb-0">
+                    {exp.year}
+                  </div>
+                  <div className="bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 rounded-3xl p-6 sm:p-8 shadow-sm hover:shadow-md transition">
+                    <h3 className="text-xl font-bold text-zinc-900 dark:text-white">
+                      {exp.role}
+                    </h3>
+                    <span className="text-xs font-semibold tracking-wider text-zinc-400 dark:text-zinc-500 uppercase block mt-1 mb-4">
+                      {exp.company}
+                    </span>
+                    <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed mb-6">
+                      {exp.desc}
+                    </p>
+                    <div className="flex flex-wrap gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800/80">
+                      {exp.tech.map((t, idx) => (
+                        <span 
+                          key={idx}
+                          className="px-3 py-1 rounded-full bg-zinc-100 dark:bg-zinc-800 text-[11px] font-semibold text-zinc-600 dark:text-zinc-300 border border-zinc-200/50 dark:border-zinc-700/50"
+                        >
+                          {t}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 </div>
-              </div>
+              </Reveal>
             ))}
           </div>
         </section>
 
         <section id="skills" className="max-w-5xl mx-auto px-6 py-16">
-          <div className="text-center space-y-2 mb-14">
-            <span className="text-xs uppercase tracking-[0.25em] font-semibold text-zinc-400 dark:text-zinc-500">
-              SKILLS & TOOLS
-            </span>
-            <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight text-zinc-900 dark:text-white">
-              My Tech Stack
-            </h2>
-          </div>
+          <Reveal>
+            <div className="text-center space-y-2 mb-14">
+              <span className="text-xs uppercase tracking-[0.25em] font-semibold text-zinc-400 dark:text-zinc-500">
+                SKILLS & TOOLS
+              </span>
+              <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight text-zinc-900 dark:text-white">
+                My Tech Stack
+              </h2>
+            </div>
+          </Reveal>
 
           <div className="space-y-12">
             <div>
-              <div className="mb-6">
-                <h3 className="text-lg font-bold text-zinc-900 dark:text-white">
-                  Front-End & Web Development
-                </h3>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                  Core technologies I use to build modern, responsive, and component-based user interfaces.
-                </p>
-              </div>
+              <Reveal>
+                <div className="mb-6">
+                  <h3 className="text-lg font-bold text-zinc-900 dark:text-white">
+                    Front-End & Web Development
+                  </h3>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                    Core technologies I use to build modern, responsive, and component-based user interfaces.
+                  </p>
+                </div>
+              </Reveal>
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 {[
@@ -603,27 +767,31 @@ export default function App() {
                   { name: 'Tailwind CSS', icon: Layers },
                   { name: 'Git & GitHub', icon: Terminal }
                 ].map((item, idx) => (
-                  <div key={idx} className="bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 rounded-2xl p-5 flex flex-col items-center justify-center text-center space-y-3 shadow-sm hover:border-zinc-400 dark:hover:border-zinc-600 transition group">
-                    <div className="w-12 h-12 rounded-xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-800 dark:text-zinc-200 group-hover:scale-110 transition-transform">
-                      <item.icon className="w-6 h-6" />
+                  <Reveal key={idx} delay={idx * 75}>
+                    <div className="bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 rounded-2xl p-5 flex flex-col items-center justify-center text-center space-y-3 shadow-sm hover:border-zinc-400 dark:hover:border-zinc-600 transition group">
+                      <div className="w-12 h-12 rounded-xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-800 dark:text-zinc-200 group-hover:scale-110 transition-transform">
+                        <item.icon className="w-6 h-6" />
+                      </div>
+                      <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
+                        {item.name}
+                      </span>
                     </div>
-                    <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
-                      {item.name}
-                    </span>
-                  </div>
+                  </Reveal>
                 ))}
               </div>
             </div>
 
             <div>
-              <div className="mb-6">
-                <h3 className="text-lg font-bold text-zinc-900 dark:text-white">
-                  Software Engineering & Programming
-                </h3>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                  Programming languages, data structures, and foundational computer science principles.
-                </p>
-              </div>
+              <Reveal>
+                <div className="mb-6">
+                  <h3 className="text-lg font-bold text-zinc-900 dark:text-white">
+                    Software Engineering & Programming
+                  </h3>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                    Programming languages, data structures, and foundational computer science principles.
+                  </p>
+                </div>
+              </Reveal>
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 {[
@@ -632,14 +800,16 @@ export default function App() {
                   { name: 'Data Structures', icon: Database },
                   { name: 'Algorithms', icon: Zap }
                 ].map((item, idx) => (
-                  <div key={idx} className="bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 rounded-2xl p-5 flex flex-col items-center justify-center text-center space-y-3 shadow-sm hover:border-zinc-400 dark:hover:border-zinc-600 transition group">
-                    <div className="w-12 h-12 rounded-xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-800 dark:text-zinc-200 group-hover:scale-110 transition-transform">
-                      <item.icon className="w-6 h-6" />
+                  <Reveal key={idx} delay={idx * 75}>
+                    <div className="bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 rounded-2xl p-5 flex flex-col items-center justify-center text-center space-y-3 shadow-sm hover:border-zinc-400 dark:hover:border-zinc-600 transition group">
+                      <div className="w-12 h-12 rounded-xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-800 dark:text-zinc-200 group-hover:scale-110 transition-transform">
+                        <item.icon className="w-6 h-6" />
+                      </div>
+                      <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
+                        {item.name}
+                      </span>
                     </div>
-                    <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
-                      {item.name}
-                    </span>
-                  </div>
+                  </Reveal>
                 ))}
               </div>
             </div>
@@ -647,149 +817,164 @@ export default function App() {
         </section>
 
         <section id="projects" className="max-w-5xl mx-auto px-6 py-16">
-          <div className="text-center space-y-2 mb-14">
-            <span className="text-xs uppercase tracking-[0.25em] font-semibold text-zinc-400 dark:text-zinc-500">
-              PORTFOLIO
-            </span>
-            <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight text-zinc-900 dark:text-white">
-              Selected Works
-            </h2>
-          </div>
+          <Reveal>
+            <div className="text-center space-y-2 mb-14">
+              <span className="text-xs uppercase tracking-[0.25em] font-semibold text-zinc-400 dark:text-zinc-500">
+                PORTFOLIO
+              </span>
+              <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight text-zinc-900 dark:text-white">
+                Selected Works
+              </h2>
+            </div>
+          </Reveal>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {projects.map((proj) => (
-              <div 
-                key={proj.id}
-                className="bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 rounded-3xl overflow-hidden flex flex-col shadow-sm hover:shadow-lg transition duration-300"
-              >
-                <div className={`h-48 bg-gradient-to-br ${proj.imageBg} p-5 flex flex-col justify-between text-white relative group overflow-hidden`}>
-                  <div className="flex items-center justify-between z-10">
-                    <span className="text-[10px] uppercase font-bold tracking-widest bg-white/10 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/20">
-                      PROJECT
-                    </span>
-                    <Code className="w-4 h-4 opacity-70" />
+            {projects.map((proj, index) => (
+              <Reveal key={proj.id} delay={index * 150}>
+                <div className="h-full bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 rounded-3xl overflow-hidden flex flex-col shadow-sm hover:shadow-lg transition duration-300">
+                  <div className={`h-48 bg-gradient-to-br ${proj.imageBg} p-5 flex flex-col justify-between text-white relative group overflow-hidden`}>
+                    <div className="flex items-center justify-between z-10">
+                      <span className="text-[10px] uppercase font-bold tracking-widest bg-white/10 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/20">
+                        PROJECT
+                      </span>
+                      <Code className="w-4 h-4 opacity-70" />
+                    </div>
+
+                    <pre className="font-mono text-[11px] opacity-80 z-10 leading-relaxed overflow-hidden">
+                      {proj.previewCode}
+                    </pre>
+
+                    <div className="absolute -right-10 -bottom-10 w-40 h-40 rounded-full bg-white/5 blur-xl pointer-events-none" />
                   </div>
 
-                  <pre className="font-mono text-[11px] opacity-80 z-10 leading-relaxed overflow-hidden">
-                    {proj.previewCode}
-                  </pre>
+                  <div className="p-6 flex-1 flex flex-col justify-between space-y-4">
+                    <div className="space-y-2">
+                      <h3 className="text-xl font-bold text-zinc-900 dark:text-white">
+                        {proj.title}
+                      </h3>
+                      <p className="text-sm text-zinc-600 dark:text-zinc-400 line-clamp-3 leading-relaxed">
+                        {proj.shortDesc}
+                      </p>
+                    </div>
 
-                  <div className="absolute -right-10 -bottom-10 w-40 h-40 rounded-full bg-white/5 blur-xl pointer-events-none" />
-                </div>
-
-                <div className="p-6 flex-1 flex flex-col justify-between space-y-4">
-                  <div className="space-y-2">
-                    <h3 className="text-xl font-bold text-zinc-900 dark:text-white">
-                      {proj.title}
-                    </h3>
-                    <p className="text-sm text-zinc-600 dark:text-zinc-400 line-clamp-3 leading-relaxed">
-                      {proj.shortDesc}
-                    </p>
+                    <button
+                      onClick={() => setSelectedProject(proj)}
+                      className="w-full py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-800 dark:text-zinc-200 font-semibold text-xs tracking-wider uppercase transition text-center cursor-pointer"
+                    >
+                      VIEW DETAILS
+                    </button>
                   </div>
-
-                  <button
-                    onClick={() => setSelectedProject(proj)}
-                    className="w-full py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-800 dark:text-zinc-200 font-semibold text-xs tracking-wider uppercase transition text-center cursor-pointer"
-                  >
-                    VIEW DETAILS
-                  </button>
                 </div>
-              </div>
+              </Reveal>
             ))}
           </div>
 
-          <div className="text-center mt-12">
-            <a
-              href="https://github.com/CharlesJaycee"
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center justify-center px-6 py-3 rounded-xl border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-800 dark:text-zinc-200 font-medium text-xs tracking-wider uppercase transition gap-2"
-            >
-              VIEW MORE PROJECTS ON GITHUB <ExternalLink className="w-3.5 h-3.5" />
-            </a>
-          </div>
+          <Reveal delay={200}>
+            <div className="text-center mt-12">
+              <a
+                href="https://github.com/CharlesJaycee"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center justify-center px-6 py-3 rounded-xl border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-800 dark:text-zinc-200 font-medium text-xs tracking-wider uppercase transition gap-2"
+              >
+                VIEW MORE PROJECTS ON GITHUB <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            </div>
+          </Reveal>
         </section>
 
         <section id="contacts" className="max-w-3xl mx-auto px-6 py-16">
-          <div className="text-center space-y-2 mb-12">
-            <span className="text-xs uppercase tracking-[0.25em] font-semibold text-zinc-400 dark:text-zinc-500">
-              GET IN TOUCH
-            </span>
-            <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight text-zinc-900 dark:text-white">
-              Contact Me
-            </h2>
-          </div>
+          <Reveal>
+            <div className="text-center space-y-2 mb-12">
+              <span className="text-xs uppercase tracking-[0.25em] font-semibold text-zinc-400 dark:text-zinc-500">
+                GET IN TOUCH
+              </span>
+              <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight text-zinc-900 dark:text-white">
+                Contact Me
+              </h2>
+            </div>
+          </Reveal>
 
-          <div className="bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 rounded-3xl p-6 sm:p-10 shadow-sm">
-            <h3 className="font-bold text-lg text-zinc-900 dark:text-white mb-6">
-              Send an Email directly.
-            </h3>
+          <Reveal delay={150}>
+            <div className="bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 rounded-3xl p-6 sm:p-10 shadow-sm">
+              <h3 className="font-bold text-lg text-zinc-900 dark:text-white mb-6">
+                Send an Email directly.
+              </h3>
 
-            {formSubmitted ? (
-              <div className="py-12 text-center space-y-3">
-                <div className="w-12 h-12 rounded-full bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 mx-auto flex items-center justify-center">
-                  <CheckCircle2 className="w-6 h-6" />
+              {formStatus === 'success' ? (
+                <div className="py-12 text-center space-y-3">
+                  <div className="w-12 h-12 rounded-full bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 mx-auto flex items-center justify-center">
+                    <CheckCircle2 className="w-6 h-6" />
+                  </div>
+                  <h4 className="text-lg font-bold text-zinc-900 dark:text-white">
+                    Message Sent!
+                  </h4>
+                  <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                    Thank you for reaching out to Charles Jaycee. Your message has been delivered and will be replied to shortly.
+                  </p>
                 </div>
-                <h4 className="text-lg font-bold text-zinc-900 dark:text-white">
-                  Message Sent!
-                </h4>
-                <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                  Thank you for reaching out to Charles Jaycee. Your message will be replied to shortly.
-                </p>
-              </div>
-            ) : (
-              <form onSubmit={handleContactSubmit} className="space-y-5">
-                <div>
-                  <label className="block text-xs uppercase font-semibold text-zinc-500 dark:text-zinc-400 mb-2">
-                    NAME
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="John Doe"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full px-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-950/50 text-zinc-900 dark:text-white placeholder-zinc-400 text-sm focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-600 transition"
-                  />
-                </div>
+              ) : (
+                <form onSubmit={handleContactSubmit} className="space-y-5">
+                  {formStatus === 'error' && (
+                    <div className="p-3.5 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 text-xs flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      <span>Failed to send message. Please try again or email charlesjayceegrico@gmail.com directly.</span>
+                    </div>
+                  )}
 
-                <div>
-                  <label className="block text-xs uppercase font-semibold text-zinc-500 dark:text-zinc-400 mb-2">
-                    EMAIL
-                  </label>
-                  <input
-                    type="email"
-                    required
-                    placeholder="charlesjayceegrico@gmail.com"
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    className="w-full px-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-950/50 text-zinc-900 dark:text-white placeholder-zinc-400 text-sm focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-600 transition"
-                  />
-                </div>
+                  <div>
+                    <label className="block text-xs uppercase font-semibold text-zinc-500 dark:text-zinc-400 mb-2">
+                      NAME
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="John Doe"
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      className="w-full px-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-950/50 text-zinc-900 dark:text-white placeholder-zinc-400 text-sm focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-600 transition"
+                    />
+                  </div>
 
-                <div>
-                  <label className="block text-xs uppercase font-semibold text-zinc-500 dark:text-zinc-400 mb-2">
-                    MESSAGE
-                  </label>
-                  <textarea
-                    rows={4}
-                    required
-                    placeholder="Your message here..."
-                    value={formData.message}
-                    onChange={(e) => setFormData({ ...formData, message: e.target.value })}
-                    className="w-full px-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-950/50 text-zinc-900 dark:text-white placeholder-zinc-400 text-sm focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-600 transition resize-none"
-                  />
-                </div>
+                  <div>
+                    <label className="block text-xs uppercase font-semibold text-zinc-500 dark:text-zinc-400 mb-2">
+                      EMAIL
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      placeholder="you@example.com"
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      className="w-full px-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-950/50 text-zinc-900 dark:text-white placeholder-zinc-400 text-sm focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-600 transition"
+                    />
+                  </div>
 
-                <button
-                  type="submit"
-                  className="w-full py-4 rounded-xl bg-zinc-900 hover:bg-black dark:bg-white dark:hover:bg-zinc-200 dark:text-zinc-950 text-white font-bold text-xs uppercase tracking-widest transition shadow-md cursor-pointer"
-                >
-                  SEND MESSAGE
-                </button>
-              </form>
-            )}
-          </div>
+                  <div>
+                    <label className="block text-xs uppercase font-semibold text-zinc-500 dark:text-zinc-400 mb-2">
+                      MESSAGE
+                    </label>
+                    <textarea
+                      rows={4}
+                      required
+                      placeholder="Your message here..."
+                      value={formData.message}
+                      onChange={(e) => setFormData({ ...formData, message: e.target.value })}
+                      className="w-full px-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-950/50 text-zinc-900 dark:text-white placeholder-zinc-400 text-sm focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-600 transition resize-none"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={formStatus === 'sending'}
+                    className="w-full py-4 rounded-xl bg-zinc-900 hover:bg-black dark:bg-white dark:hover:bg-zinc-200 dark:text-zinc-950 text-white font-bold text-xs uppercase tracking-widest transition shadow-md cursor-pointer disabled:opacity-50"
+                  >
+                    {formStatus === 'sending' ? 'SENDING MESSAGE...' : 'SEND MESSAGE'}
+                  </button>
+                </form>
+              )}
+            </div>
+          </Reveal>
         </section>
       </main>
 
