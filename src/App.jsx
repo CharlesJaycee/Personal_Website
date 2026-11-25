@@ -31,6 +31,11 @@ export default function App() {
   const [formData, setFormData] = useState({ name: '', email: '', message: '' });
   const [formSubmitted, setFormSubmitted] = useState(false);
 
+  // Typing animation state for Hero title
+  const fullTitle = "Hi, I'm Charles Jaycee";
+  const [typedTitle, setTypedTitle] = useState('');
+  const [charIndex, setCharIndex] = useState(0);
+
   useEffect(() => {
     const interval = setInterval(() => {
       setProgress((prev) => {
@@ -44,6 +49,17 @@ export default function App() {
     }, 40);
     return () => clearInterval(interval);
   }, []);
+
+  // Run typing animation once loading finishes
+  useEffect(() => {
+    if (!loading && charIndex < fullTitle.length) {
+      const timeout = setTimeout(() => {
+        setTypedTitle((prev) => prev + fullTitle[charIndex]);
+        setCharIndex((prev) => prev + 1);
+      }, 85);
+      return () => clearTimeout(timeout);
+    }
+  }, [loading, charIndex, fullTitle]);
 
   useEffect(() => {
     if (chatOpen && chatBottomRef.current) {
@@ -249,9 +265,13 @@ export default function App() {
             <button
               onClick={() => setDarkMode(!darkMode)}
               aria-label="Toggle Theme"
-              className="p-2 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-300 transition-colors cursor-pointer"
+              className="p-2 rounded-full bg-sky-500/10 hover:bg-sky-500/20 dark:bg-sky-400/10 dark:hover:bg-sky-400/20 border border-sky-500/20 dark:border-sky-400/20 transition-all duration-300 cursor-pointer"
             >
-              {darkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-zinc-700" />}
+              {darkMode ? (
+                <Sun className="w-4 h-4 text-sky-400 transition-transform duration-300 hover:rotate-45" />
+              ) : (
+                <Moon className="w-4 h-4 text-indigo-600 transition-transform duration-300 hover:-rotate-12" />
+              )}
             </button>
           </div>
         </nav>
@@ -261,8 +281,9 @@ export default function App() {
         <section id="home" className="max-w-5xl mx-auto px-6 py-12 md:py-20 flex flex-col md:flex-row items-center justify-between gap-12">
           <div className="flex-1 space-y-6 text-left">
             <div className="space-y-2">
-              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-zinc-900 dark:text-white">
-                Hi, I'm Charles Jaycee
+              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-zinc-900 dark:text-white min-h-[1.2em]">
+                {typedTitle}
+                <span className="inline-block w-[3px] h-[0.9em] bg-sky-500 dark:bg-sky-400 ml-1 align-middle animate-pulse" />
               </h1>
               <h2 className="text-2xl sm:text-3xl font-semibold text-zinc-600 dark:text-zinc-400 tracking-tight">
                 BSIT Student & Developer
@@ -349,7 +370,15 @@ export default function App() {
                 <GraduationCap className="w-4 h-4" />
               </div>
               <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
-                BSIT Student @ Adamson
+                BSIT Student{' '}
+                <a
+                  href="https://www.adamson.edu.ph"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sky-600 dark:text-sky-400 hover:underline transition-colors"
+                >
+                  @ Adamson
+                </a>
               </span>
             </div>
 
