@@ -4,7 +4,7 @@ import {
   Send, X, CheckCircle2, Zap, Code, Database, 
   Globe, Sparkles, GraduationCap, 
   Mail, Layers, Terminal, Volume2, VolumeX, AlertCircle, SkipForward,
-  Copy, Check, Music
+  Copy, Check, Clock, Cpu, Monitor
 } from 'lucide-react';
 
 // Import your profile photos from assets
@@ -61,16 +61,19 @@ export default function App() {
   const [scrollProgress, setScrollProgress] = useState(0);
   const [showBackToTop, setShowBackToTop] = useState(false);
 
-  // Custom Cursor Spotlight state
+  // Custom Red Cursor Spotlight state
   const [mousePos, setMousePos] = useState({ x: -500, y: -500 });
 
   // One-click Copy Email state
   const [copiedEmail, setCopiedEmail] = useState(false);
 
-  // Interactive Skill card selection (for mobile tap or desktop hover)
+  // Interactive Skill card selection
   const [activeSkill, setActiveSkill] = useState(null);
 
-  // 4-Track Ambient Background Playlist + Now-Playing Toast
+  // Live Manila Time state
+  const [manilaTime, setManilaTime] = useState('');
+
+  // 4-Track Ambient Background Playlist + Web Audio API Real-Time Equalizer
   const playlist = [
     { title: 'Ambient Track 1', src: './track1.mp3' },
     { title: 'Ambient Track 2', src: './track2.mp3' },
@@ -79,9 +82,13 @@ export default function App() {
   ];
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
   const [isPlayingMusic, setIsPlayingMusic] = useState(false);
-  const [showNowPlaying, setShowNowPlaying] = useState(false);
+  const [playerExpanded, setPlayerExpanded] = useState(false);
+  const [eqBars, setEqBars] = useState([25, 45, 35, 60, 30]);
+
   const audioRef = useRef(null);
-  const toastTimeoutRef = useRef(null);
+  const audioCtxRef = useRef(null);
+  const analyserRef = useRef(null);
+  const animFrameRef = useRef(null);
   const userPausedRef = useRef(false);
 
   // Smart Chatbot state
@@ -107,13 +114,80 @@ export default function App() {
   const [typedTitle, setTypedTitle] = useState('');
   const [charIndex, setCharIndex] = useState(0);
 
-  const triggerNowPlayingToast = () => {
-    setShowNowPlaying(true);
-    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
-    toastTimeoutRef.current = setTimeout(() => {
-      setShowNowPlaying(false);
-    }, 3500);
+  // Live Manila Time updater
+  useEffect(() => {
+    const updateClock = () => {
+      try {
+        const formatted = new Intl.DateTimeFormat('en-US', {
+          timeZone: 'Asia/Manila',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: true
+        }).format(new Date());
+        setManilaTime(formatted);
+      } catch {
+        setManilaTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+      }
+    };
+    updateClock();
+    const timer = setInterval(updateClock, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Initialize Web Audio API Analyser for real-time audio visualizer bars
+  const setupAudioVisualizer = () => {
+    if (!audioRef.current || audioCtxRef.current) return;
+    try {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      const ctx = new AudioContextClass();
+      const source = ctx.createMediaElementSource(audioRef.current);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 32;
+      source.connect(analyser);
+      analyser.connect(ctx.destination);
+      audioCtxRef.current = ctx;
+      analyserRef.current = analyser;
+    } catch {
+      // Fallback animation handles bars if Web Audio context isn't permitted
+    }
   };
+
+  // Drive live equalizer bars when audio is playing
+  useEffect(() => {
+    if (!isPlayingMusic) {
+      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+      setEqBars([20, 20, 20, 20, 20]);
+      return;
+    }
+
+    const updateBars = () => {
+      if (analyserRef.current) {
+        const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
+        analyserRef.current.getByteFrequencyData(dataArray);
+        const indices = [1, 3, 5, 7, 9];
+        const nextBars = indices.map((idx) => {
+          const val = dataArray[idx] || 0;
+          return Math.max(18, Math.min(100, Math.round((val / 255) * 100)));
+        });
+        setEqBars(nextBars);
+      } else {
+        setEqBars([
+          25 + Math.round(Math.random() * 65),
+          35 + Math.round(Math.random() * 60),
+          20 + Math.round(Math.random() * 75),
+          40 + Math.round(Math.random() * 55),
+          25 + Math.round(Math.random() * 65)
+        ]);
+      }
+      animFrameRef.current = requestAnimationFrame(updateBars);
+    };
+
+    animFrameRef.current = requestAnimationFrame(updateBars);
+    return () => {
+      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+    };
+  }, [isPlayingMusic]);
 
   // Loading progress bar
   useEffect(() => {
@@ -136,16 +210,20 @@ export default function App() {
 
     const attemptAutoplay = () => {
       if (!audioRef.current || userPausedRef.current) return;
+      setupAudioVisualizer();
+      if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+        audioCtxRef.current.resume().catch(() => {});
+      }
       audioRef.current.volume = 0.25;
       audioRef.current
         .play()
         .then(() => {
           setIsPlayingMusic(true);
-          triggerNowPlayingToast();
+          setPlayerExpanded(true);
           cleanupListeners();
         })
         .catch(() => {
-          // Browser blocked unmuted autoplay; wait for first user click/keydown
+          // Wait for first user gesture if browser blocks autoplay
         });
     };
 
@@ -217,11 +295,15 @@ export default function App() {
 
   const toggleMusic = () => {
     if (!audioRef.current) return;
+    setupAudioVisualizer();
+    if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+      audioCtxRef.current.resume().catch(() => {});
+    }
+
     if (isPlayingMusic) {
       userPausedRef.current = true;
       audioRef.current.pause();
       setIsPlayingMusic(false);
-      setShowNowPlaying(false);
     } else {
       userPausedRef.current = false;
       audioRef.current.volume = 0.25;
@@ -229,7 +311,7 @@ export default function App() {
         .play()
         .then(() => {
           setIsPlayingMusic(true);
-          triggerNowPlayingToast();
+          setPlayerExpanded(true);
         })
         .catch(() => setIsPlayingMusic(false));
     }
@@ -237,6 +319,11 @@ export default function App() {
 
   const nextTrack = () => {
     userPausedRef.current = false;
+    setupAudioVisualizer();
+    if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+      audioCtxRef.current.resume().catch(() => {});
+    }
+
     const nextIndex = (currentTrackIndex + 1) % playlist.length;
     setCurrentTrackIndex(nextIndex);
     setTimeout(() => {
@@ -246,7 +333,7 @@ export default function App() {
           .play()
           .then(() => {
             setIsPlayingMusic(true);
-            triggerNowPlayingToast();
+            setPlayerExpanded(true);
           })
           .catch(() => setIsPlayingMusic(false));
       }
@@ -384,7 +471,7 @@ export default function App() {
       title: 'Student Management System',
       shortDesc: 'A C# console application engineered for student record management, featuring search, data entry, and removal logic.',
       fullDesc: 'Developed a console application utilizing object-oriented programming principles, nested loops, and switch structures. Features student record search algorithms, validation prompts, data entry handling, and array management.',
-      imageBg: 'from-blue-950 to-zinc-950',
+      imageBg: 'from-zinc-900 to-black',
       previewCode: 'STUDENT MANAGEMENT SYSTEM v1.0\n[Language: C# (.NET)]\n- Record Search & Data Entry\n- Multi-dimensional & Jagged Arrays\n- OOP Architecture & Input Validation',
       tags: ['C#', '.NET', 'OOP', 'DATA STRUCTURES', 'CONSOLE APP']
     },
@@ -393,7 +480,7 @@ export default function App() {
       title: 'Responsive Tourist Landing Page',
       shortDesc: 'A single-page tourist guide website featuring custom card layouts, gradients, and embedded media.',
       fullDesc: 'Designed and developed a responsive single-page tourist website featuring localized navigation sections, custom CSS card layouts, background color gradients, embedded auto-play media, and GitHub social integration.',
-      imageBg: 'from-cyan-950 to-slate-900',
+      imageBg: 'from-neutral-900 to-zinc-950',
       previewCode: 'TOURIST PORTFOLIO WEBSITE\n[Tech: HTML5 + CSS3 + JS]\n- Responsive Card Layout & Gradients\n- Interactive Navigation Anchor Links\n- Embedded Media & Social Integration',
       tags: ['HTML5', 'CSS3', 'JAVASCRIPT', 'TAILWIND CSS', 'GITHUB']
     },
@@ -402,7 +489,7 @@ export default function App() {
       title: 'TCG Deck Strategy & Ratio Calculator',
       shortDesc: 'An interactive web application to calculate and optimize card ratios for competitive deck building.',
       fullDesc: 'Built an interactive utility web tool designed to calculate and optimize deck ratios between Basic, Stage 1, Stage 2 Pokémon, Trainer cards, and Energy distributions.',
-      imageBg: 'from-amber-950 to-zinc-900',
+      imageBg: 'from-stone-900 to-zinc-950',
       previewCode: 'TCG DECK OPTIMIZER\n[Status: ACTIVE]\n- Card Ratio Calculation Engine\n- Energy & Trainer Balance Helper\n- Interactive Deck Analyzer',
       tags: ['JAVASCRIPT', 'REACT', 'TAILWIND CSS', 'HTML5', 'GIT']
     }
@@ -433,23 +520,23 @@ export default function App() {
   ];
 
   return (
-    <div className={darkMode ? 'dark bg-zinc-950 text-zinc-100 min-h-screen font-sans selection:bg-sky-500/30 selection:text-sky-200 transition-colors duration-300 relative' : 'bg-[#f7f8fa] text-zinc-900 min-h-screen font-sans selection:bg-indigo-500/20 selection:text-indigo-900 transition-colors duration-300 relative'}>
+    <div className={darkMode ? 'dark bg-zinc-950 text-zinc-100 min-h-screen font-sans selection:bg-white selection:text-black transition-colors duration-300 relative' : 'bg-[#f7f8fa] text-black min-h-screen font-sans selection:bg-black selection:text-white transition-colors duration-300 relative'}>
       
-      {/* Smooth Top Scroll Progress Bar */}
+      {/* Smooth Top Scroll Progress Bar (Monochrome Black/White) */}
       <div className="fixed top-0 left-0 right-0 h-[3px] z-50 bg-transparent pointer-events-none">
         <div
-          className="h-full bg-gradient-to-r from-indigo-500 via-sky-500 to-cyan-400 dark:from-sky-400 dark:via-cyan-300 dark:to-emerald-400 transition-all duration-150 ease-out"
+          className="h-full bg-zinc-950 dark:bg-white transition-all duration-150 ease-out"
           style={{ width: `${scrollProgress}%` }}
         />
       </div>
 
-      {/* Custom Cursor Spotlight / Subtle Radial Glow */}
+      {/* Custom Red Cursor Spotlight */}
       <div
         className="pointer-events-none fixed inset-0 z-30 transition-opacity duration-300"
         style={{
           background: darkMode
-            ? `radial-gradient(550px circle at ${mousePos.x}px ${mousePos.y}px, rgba(56, 189, 248, 0.07), transparent 80%)`
-            : `radial-gradient(550px circle at ${mousePos.x}px ${mousePos.y}px, rgba(79, 70, 229, 0.05), transparent 80%)`
+            ? `radial-gradient(520px circle at ${mousePos.x}px ${mousePos.y}px, rgba(239, 68, 68, 0.11), transparent 80%)`
+            : `radial-gradient(520px circle at ${mousePos.x}px ${mousePos.y}px, rgba(220, 38, 38, 0.08), transparent 80%)`
         }}
       />
 
@@ -464,15 +551,15 @@ export default function App() {
       {loading && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-white dark:bg-zinc-950 transition-opacity duration-500">
           <div className="text-center space-y-4 px-4">
-            <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-indigo-950 dark:text-white transition-colors">
+            <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-black dark:text-white transition-colors">
               CHARLES JAYCEE
             </h1>
-            <p className="text-xs tracking-[0.3em] font-medium text-indigo-500 dark:text-sky-400 uppercase transition-colors">
+            <p className="text-xs tracking-[0.3em] font-medium text-zinc-700 dark:text-zinc-400 uppercase transition-colors">
               PORTFOLIO LOADING
             </p>
             <div className="w-56 h-[3px] bg-zinc-200 dark:bg-zinc-800 rounded-full mx-auto overflow-hidden relative mt-6">
               <div 
-                className="h-full bg-indigo-600 dark:bg-sky-400 transition-all duration-150 ease-out"
+                className="h-full bg-black dark:bg-white transition-all duration-150 ease-out"
                 style={{ width: `${progress}%` }}
               />
             </div>
@@ -481,19 +568,19 @@ export default function App() {
       )}
 
       <header className="fixed top-4 inset-x-0 z-40 px-4 pointer-events-none">
-        <nav className="max-w-4xl mx-auto pointer-events-auto rounded-full bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border border-zinc-200/80 dark:border-zinc-800/80 px-6 py-3 shadow-lg shadow-black/[0.03] flex items-center justify-between transition-all duration-300">
+        <nav className="max-w-4xl mx-auto pointer-events-auto rounded-full bg-white/85 dark:bg-zinc-900/85 backdrop-blur-md border border-zinc-200 dark:border-zinc-800 px-5 py-2.5 shadow-lg shadow-black/[0.04] flex items-center justify-between transition-all duration-300">
           <button 
             onClick={() => scrollToSection('home')}
-            className="text-lg font-black tracking-tight text-indigo-950 dark:text-white hover:opacity-80 transition-colors cursor-pointer"
+            className="text-lg font-black tracking-tight text-black dark:text-white hover:opacity-80 transition-colors cursor-pointer"
           >
-            JAY<span className="text-indigo-600 dark:text-sky-400 transition-colors">.</span>
+            JAY<span className="text-zinc-500 dark:text-zinc-400">.</span>
           </button>
 
-          <div className="hidden sm:flex items-center space-x-1 md:space-x-2">
+          <div className="hidden md:flex items-center space-x-1">
             {[
               { id: 'home', label: 'Home' },
               { id: 'about', label: 'About Me' },
-              { id: 'educational', label: 'Academic Experience' },
+              { id: 'educational', label: 'Experience' },
               { id: 'skills', label: 'Skills' },
               { id: 'projects', label: 'Projects' },
               { id: 'contacts', label: 'Contacts' }
@@ -503,8 +590,8 @@ export default function App() {
                 onClick={() => scrollToSection(link.id)}
                 className={`px-3.5 py-1.5 rounded-full text-sm font-medium transition-all duration-300 transform active:scale-95 cursor-pointer ${
                   activeSection === link.id
-                    ? 'bg-indigo-600 dark:bg-sky-400 text-white dark:text-zinc-950 font-semibold shadow-sm'
-                    : 'text-zinc-600 dark:text-zinc-400 hover:text-indigo-600 dark:hover:text-sky-300 hover:bg-zinc-100/80 dark:hover:bg-zinc-800/80'
+                    ? 'bg-black dark:bg-white text-white dark:text-black font-semibold shadow-sm'
+                    : 'text-zinc-800 dark:text-zinc-400 hover:text-black dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800'
                 }`}
               >
                 {link.label}
@@ -513,92 +600,114 @@ export default function App() {
           </div>
 
           <div className="flex items-center space-x-2">
-            {/* Play / Mute Music Button */}
-            <button
-              onClick={toggleMusic}
-              aria-label="Toggle Background Music"
-              title={isPlayingMusic ? `Playing: ${playlist[currentTrackIndex].title}` : 'Play Ambient Music'}
-              className={`p-2 rounded-full border transition-all duration-300 cursor-pointer ${
-                isPlayingMusic
-                  ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
-                  : 'bg-zinc-100/80 dark:bg-zinc-800/80 border-zinc-200/80 dark:border-zinc-700/80 text-zinc-500 dark:text-zinc-400 hover:text-indigo-600 dark:hover:text-sky-400'
-              }`}
+            {/* Compact Expandable Mini-Player Pill with Real Audio Waveform */}
+            <div
+              onMouseEnter={() => setPlayerExpanded(true)}
+              onMouseLeave={() => !isPlayingMusic && setPlayerExpanded(false)}
+              className="flex items-center rounded-full bg-zinc-100 dark:bg-zinc-800/90 border border-zinc-300/80 dark:border-zinc-700/80 p-1 transition-all duration-300"
             >
-              {isPlayingMusic ? (
-                <Volume2 className="w-4 h-4 animate-pulse" />
-              ) : (
-                <VolumeX className="w-4 h-4" />
-              )}
-            </button>
+              <button
+                onClick={toggleMusic}
+                aria-label="Toggle Background Music"
+                title={isPlayingMusic ? 'Pause Music' : 'Play Ambient Music'}
+                className={`p-1.5 rounded-full transition-all duration-300 cursor-pointer ${
+                  isPlayingMusic
+                    ? 'bg-black text-white dark:bg-white dark:text-black'
+                    : 'text-black dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                }`}
+              >
+                {isPlayingMusic ? (
+                  <Volume2 className="w-3.5 h-3.5" />
+                ) : (
+                  <VolumeX className="w-3.5 h-3.5" />
+                )}
+              </button>
 
-            {/* Next Track Button */}
-            <button
-              onClick={nextTrack}
-              aria-label="Next Track"
-              title={`Next Track (${playlist[(currentTrackIndex + 1) % playlist.length].title})`}
-              className="p-2 rounded-full bg-zinc-100/80 dark:bg-zinc-800/80 border border-zinc-200/80 dark:border-zinc-700/80 text-zinc-500 dark:text-zinc-400 hover:text-indigo-600 dark:hover:text-sky-400 transition-all duration-300 cursor-pointer"
-            >
-              <SkipForward className="w-4 h-4" />
-            </button>
+              {/* Expandable Track Title + Live Equalizer Bars */}
+              <div
+                className={`flex items-center overflow-hidden transition-all duration-300 ${
+                  isPlayingMusic || playerExpanded
+                    ? 'max-w-[175px] opacity-100 px-2.5 gap-2'
+                    : 'max-w-0 opacity-0 px-0 gap-0'
+                }`}
+              >
+                {/* Real-Time Audio Equalizer Bars */}
+                <div className="flex items-end gap-[2px] h-3.5 w-4 shrink-0" aria-hidden="true">
+                  {eqBars.map((heightPct, i) => (
+                    <span
+                      key={i}
+                      style={{ height: `${heightPct}%` }}
+                      className="w-[2px] rounded-full bg-black dark:bg-white transition-all duration-75"
+                    />
+                  ))}
+                </div>
+
+                <span className="text-[11px] font-semibold text-black dark:text-zinc-200 truncate whitespace-nowrap">
+                  {playlist[currentTrackIndex].title}
+                </span>
+              </div>
+
+              <button
+                onClick={nextTrack}
+                aria-label="Next Track"
+                title={`Next Track (${playlist[(currentTrackIndex + 1) % playlist.length].title})`}
+                className="p-1.5 rounded-full text-black dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all duration-300 cursor-pointer"
+              >
+                <SkipForward className="w-3.5 h-3.5" />
+              </button>
+            </div>
 
             {/* Dark / Light Theme Toggle */}
             <button
               onClick={() => setDarkMode(!darkMode)}
               aria-label="Toggle Theme"
               title={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-              className="p-2 rounded-full bg-indigo-500/10 hover:bg-indigo-500/20 dark:bg-sky-400/10 dark:hover:bg-sky-400/20 border border-indigo-500/20 dark:border-sky-400/20 transition-all duration-300 cursor-pointer"
+              className="p-2 rounded-full bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 border border-zinc-300/80 dark:border-zinc-700 transition-all duration-300 cursor-pointer"
             >
               {darkMode ? (
-                <Sun className="w-4 h-4 text-sky-400 transition-transform duration-300 hover:rotate-45" />
+                <Sun className="w-4 h-4 text-white transition-transform duration-300 hover:rotate-45" />
               ) : (
-                <Moon className="w-4 h-4 text-indigo-600 transition-transform duration-300 hover:-rotate-12" />
+                <Moon className="w-4 h-4 text-black transition-transform duration-300 hover:-rotate-12" />
               )}
             </button>
           </div>
         </nav>
-
-        {/* Mini Now-Playing Toast / Track Title Display */}
-        <div
-          className={`max-w-4xl mx-auto mt-2.5 flex justify-end transition-all duration-300 ${
-            showNowPlaying && isPlayingMusic
-              ? 'opacity-100 translate-y-0'
-              : 'opacity-0 -translate-y-2 pointer-events-none'
-          }`}
-        >
-          <div className="pointer-events-auto inline-flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md border border-zinc-200/80 dark:border-zinc-800 shadow-md text-xs">
-            <Music className="w-3.5 h-3.5 text-emerald-500 animate-bounce" />
-            <span className="text-zinc-500 dark:text-zinc-400 font-medium">Now Playing:</span>
-            <span className="font-bold text-indigo-600 dark:text-sky-400 transition-colors">
-              {playlist[currentTrackIndex].title}
-            </span>
-            <span className="text-[10px] text-zinc-400">
-              ({currentTrackIndex + 1}/{playlist.length})
-            </span>
-          </div>
-        </div>
       </header>
 
-      <main className="pt-24 pb-16 relative z-10">
-        <section id="home" className="max-w-5xl mx-auto px-6 py-12 md:py-20 flex flex-col md:flex-row items-center justify-between gap-12">
+      <main className="pt-28 pb-16 relative z-10">
+        <section id="home" className="max-w-5xl mx-auto px-6 py-10 md:py-16 flex flex-col md:flex-row items-center justify-between gap-12">
           <div className="flex-1 space-y-6 text-left">
+            {/* Live Manila Time & Availability Status Pill */}
+            <div className="inline-flex flex-wrap items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-white dark:bg-zinc-900 border border-zinc-300/80 dark:border-zinc-800 shadow-sm text-xs">
+              <span className="inline-flex items-center gap-1.5 font-semibold text-black dark:text-zinc-200">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                Open to Collaborations
+              </span>
+              <span className="text-zinc-300 dark:text-zinc-700">|</span>
+              <span className="inline-flex items-center gap-1.5 font-mono text-[11px] font-medium text-zinc-800 dark:text-zinc-400">
+                <Clock className="w-3 h-3 text-black dark:text-zinc-300" />
+                Manila, PH • {manilaTime || 'PHT'}
+              </span>
+            </div>
+
             <div className="space-y-2">
-              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-indigo-950 dark:text-white transition-colors duration-300 min-h-[1.2em]">
+              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-black dark:text-white transition-colors duration-300 min-h-[1.2em]">
                 {typedTitle}
-                <span className="inline-block w-[3px] h-[0.9em] bg-indigo-600 dark:bg-sky-400 ml-1 align-middle animate-pulse transition-colors duration-300" />
+                <span className="inline-block w-[3px] h-[0.9em] bg-black dark:bg-white ml-1 align-middle animate-pulse transition-colors duration-300" />
               </h1>
-              <h2 className="text-2xl sm:text-3xl font-semibold text-indigo-600 dark:text-sky-400 tracking-tight transition-colors duration-300">
+              <h2 className="text-2xl sm:text-3xl font-semibold text-zinc-800 dark:text-zinc-400 tracking-tight transition-colors duration-300">
                 BSIT Student & Developer
               </h2>
             </div>
 
-            <p className="text-zinc-600 dark:text-zinc-300 text-base leading-relaxed max-w-xl transition-colors duration-300">
+            <p className="text-zinc-900 dark:text-zinc-300 text-base leading-relaxed max-w-xl transition-colors duration-300">
               Welcome to my personal website! I am a passionate Information Technology student at Adamson University focused on C# programming logic, and responsive front-end web development.
             </p>
 
             <div className="flex flex-wrap items-center gap-3 pt-2">
               <button 
                 onClick={() => scrollToSection('projects')}
-                className="inline-flex items-center justify-center px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 dark:bg-sky-400 dark:hover:bg-sky-300 dark:text-zinc-950 text-white font-semibold text-sm transition-all shadow-md gap-2 group cursor-pointer"
+                className="inline-flex items-center justify-center px-6 py-3 rounded-xl bg-black hover:bg-zinc-800 dark:bg-white dark:hover:bg-zinc-200 text-white dark:text-black font-semibold text-sm transition-all shadow-md gap-2 group cursor-pointer"
               >
                 Explore Work 
                 <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
@@ -607,15 +716,15 @@ export default function App() {
               <a 
                 href="#contacts"
                 onClick={(e) => { e.preventDefault(); scrollToSection('contacts'); }}
-                className="inline-flex items-center justify-center px-6 py-3 rounded-xl border border-zinc-300 dark:border-zinc-700 hover:border-indigo-500 dark:hover:border-sky-400 hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-800 dark:text-zinc-200 font-medium text-sm transition-all gap-2"
+                className="inline-flex items-center justify-center px-6 py-3 rounded-xl border border-zinc-400 dark:border-zinc-700 hover:border-black dark:hover:border-white bg-white/60 dark:bg-zinc-900/60 hover:bg-zinc-100 dark:hover:bg-zinc-900 text-black dark:text-zinc-200 font-medium text-sm transition-all gap-2"
               >
                 Get in Touch 
-                <Mail className="w-4 h-4 text-indigo-600 dark:text-sky-400 transition-colors" />
+                <Mail className="w-4 h-4 text-black dark:text-zinc-300 transition-colors" />
               </a>
             </div>
 
-            <div className="pt-6 space-y-2">
-              <p className="text-xs uppercase tracking-widest font-semibold text-indigo-600/80 dark:text-sky-400/80 transition-colors">
+            <div className="pt-4 space-y-2">
+              <p className="text-xs uppercase tracking-widest font-bold text-zinc-800 dark:text-zinc-500 transition-colors">
                 CONNECT
               </p>
               <div className="flex items-center space-x-4">
@@ -623,7 +732,7 @@ export default function App() {
                   href="https://www.facebook.com/HeyItzceejay07/" 
                   target="_blank" 
                   rel="noreferrer" 
-                  className="p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 hover:border-indigo-500 dark:hover:border-sky-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:text-indigo-600 dark:hover:text-sky-400 transition-all"
+                  className="p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-800 hover:border-black dark:hover:border-white bg-white dark:bg-zinc-900 text-black dark:text-zinc-300 hover:opacity-80 transition-all"
                   title="Facebook"
                 >
                   <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
@@ -634,7 +743,7 @@ export default function App() {
                   href="https://github.com/CharlesJaycee" 
                   target="_blank" 
                   rel="noreferrer" 
-                  className="p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 hover:border-indigo-500 dark:hover:border-sky-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:text-indigo-600 dark:hover:text-sky-400 transition-all"
+                  className="p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-800 hover:border-black dark:hover:border-white bg-white dark:bg-zinc-900 text-black dark:text-zinc-300 hover:opacity-80 transition-all"
                   title="GitHub"
                 >
                   <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
@@ -645,7 +754,7 @@ export default function App() {
                   href="https://www.instagram.com/_mxkora/" 
                   target="_blank" 
                   rel="noreferrer" 
-                  className="p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 hover:border-indigo-500 dark:hover:border-sky-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:text-indigo-600 dark:hover:text-sky-400 transition-all"
+                  className="p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-800 hover:border-black dark:hover:border-white bg-white dark:bg-zinc-900 text-black dark:text-zinc-300 hover:opacity-80 transition-all"
                   title="Instagram"
                 >
                   <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
@@ -657,7 +766,7 @@ export default function App() {
           </div>
 
           <div className="relative flex-1 w-full max-w-md flex justify-center items-center">
-            <div className="relative w-72 h-80 sm:w-80 sm:h-96 rounded-3xl overflow-hidden shadow-2xl flex items-center justify-center border border-zinc-300/50 dark:border-zinc-700/50 group">
+            <div className="relative w-72 h-80 sm:w-80 sm:h-96 rounded-3xl overflow-hidden shadow-2xl flex items-center justify-center border border-zinc-300 dark:border-zinc-800 group">
               <img 
                 src={profileHome} 
                 alt="Charles Jaycee" 
@@ -666,37 +775,37 @@ export default function App() {
               <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
             </div>
 
-            <div className="absolute -left-4 top-10 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md border border-zinc-200 dark:border-zinc-800 shadow-xl rounded-2xl p-3.5 flex items-center space-x-3 transition hover:scale-105 z-20">
-              <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-zinc-800 flex items-center justify-center text-indigo-600 dark:text-sky-400 transition-colors">
+            <div className="absolute -left-4 top-10 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md border border-zinc-300 dark:border-zinc-800 shadow-xl rounded-2xl p-3.5 flex items-center space-x-3 transition hover:scale-105 z-20">
+              <div className="w-9 h-9 rounded-xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-black dark:text-white transition-colors">
                 <GraduationCap className="w-4 h-4" />
               </div>
-              <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
+              <span className="text-xs font-semibold text-black dark:text-zinc-200">
                 BSIT Student{' '}
                 <a
                   href="https://www.adamson.edu.ph"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-indigo-600 dark:text-sky-400 hover:underline transition-colors"
+                  className="underline decoration-zinc-400 hover:decoration-black dark:hover:decoration-white font-bold text-black dark:text-white transition-colors"
                 >
                   @ Adamson
                 </a>
               </span>
             </div>
 
-            <div className="absolute -right-4 top-1/2 -translate-y-1/2 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md border border-zinc-200 dark:border-zinc-800 shadow-xl rounded-2xl p-3.5 flex items-center space-x-3 transition hover:scale-105 z-20">
-              <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-zinc-800 flex items-center justify-center text-indigo-600 dark:text-sky-400 transition-colors">
+            <div className="absolute -right-4 top-1/2 -translate-y-1/2 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md border border-zinc-300 dark:border-zinc-800 shadow-xl rounded-2xl p-3.5 flex items-center space-x-3 transition hover:scale-105 z-20">
+              <div className="w-9 h-9 rounded-xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-black dark:text-white transition-colors">
                 <Zap className="w-4 h-4" />
               </div>
-              <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
+              <span className="text-xs font-semibold text-black dark:text-zinc-200">
                 C# & Front-End Focus
               </span>
             </div>
 
-            <div className="absolute -left-2 bottom-6 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md border border-zinc-200 dark:border-zinc-800 shadow-xl rounded-2xl p-3.5 flex items-center space-x-3 transition hover:scale-105 z-20">
-              <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-zinc-800 flex items-center justify-center text-indigo-600 dark:text-sky-400 transition-colors">
+            <div className="absolute -left-2 bottom-6 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md border border-zinc-300 dark:border-zinc-800 shadow-xl rounded-2xl p-3.5 flex items-center space-x-3 transition hover:scale-105 z-20">
+              <div className="w-9 h-9 rounded-xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-black dark:text-white transition-colors">
                 <Code className="w-4 h-4" />
               </div>
-              <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
+              <span className="text-xs font-semibold text-black dark:text-zinc-200">
                 Web & Software Dev
               </span>
             </div>
@@ -706,10 +815,10 @@ export default function App() {
         <section id="about" className="max-w-5xl mx-auto px-6 py-16">
           <Reveal>
             <div className="text-center space-y-2 mb-12">
-              <span className="text-xs uppercase tracking-[0.25em] font-semibold text-indigo-600 dark:text-sky-400 transition-colors">
+              <span className="text-xs uppercase tracking-[0.25em] font-bold text-zinc-700 dark:text-zinc-400 transition-colors">
                 DISCOVER
               </span>
-              <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight text-indigo-950 dark:text-white transition-colors">
+              <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight text-black dark:text-white transition-colors">
                 About Me
               </h2>
             </div>
@@ -717,7 +826,7 @@ export default function App() {
 
           <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
             <Reveal delay={100} className="md:col-span-4">
-              <div className="h-full bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 rounded-3xl p-6 flex flex-col items-center justify-center text-center shadow-sm relative overflow-hidden group">
+              <div className="h-full bg-white dark:bg-zinc-900 border border-zinc-300/80 dark:border-zinc-800 rounded-3xl p-6 flex flex-col items-center justify-center text-center shadow-sm relative overflow-hidden group">
                 <div className="w-44 h-56 rounded-2xl overflow-hidden mb-4 border border-zinc-300 dark:border-zinc-700 shadow-md">
                   <img 
                     src={profileAbout} 
@@ -725,10 +834,10 @@ export default function App() {
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                   />
                 </div>
-                <h3 className="font-bold text-lg text-indigo-950 dark:text-white transition-colors">
+                <h3 className="font-bold text-lg text-black dark:text-white transition-colors">
                   Charles Jaycee L. Grico
                 </h3>
-                <p className="text-xs text-indigo-600 dark:text-sky-400 font-medium mt-1 transition-colors">
+                <p className="text-xs text-zinc-800 dark:text-zinc-400 font-medium mt-1 transition-colors">
                   BSIT Student @ Adamson University
                 </p>
               </div>
@@ -737,22 +846,22 @@ export default function App() {
             <div className="md:col-span-8 flex flex-col space-y-6">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 <Reveal delay={200}>
-                  <div className="h-full bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 rounded-3xl p-6 shadow-sm hover:border-indigo-300 dark:hover:border-sky-500/40 transition">
-                    <h3 className="font-bold text-lg text-indigo-950 dark:text-sky-300 mb-3 transition-colors">
+                  <div className="h-full bg-white dark:bg-zinc-900 border border-zinc-300/80 dark:border-zinc-800 rounded-3xl p-6 shadow-sm hover:border-black dark:hover:border-zinc-600 transition">
+                    <h3 className="font-bold text-lg text-black dark:text-white mb-3 transition-colors">
                       Who Am I
                     </h3>
-                    <p className="text-sm text-zinc-600 dark:text-zinc-300 leading-relaxed transition-colors">
+                    <p className="text-sm text-zinc-900 dark:text-zinc-300 leading-relaxed transition-colors">
                       I am a Bachelor of Science in Information Technology (BSIT) student at Adamson University dedicated to building clean, accessible web interfaces and software solutions.
                     </p>
                   </div>
                 </Reveal>
 
                 <Reveal delay={300}>
-                  <div className="h-full bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 rounded-3xl p-6 shadow-sm hover:border-indigo-300 dark:hover:border-sky-500/40 transition">
-                    <h3 className="font-bold text-lg text-indigo-950 dark:text-sky-300 mb-3 transition-colors">
+                  <div className="h-full bg-white dark:bg-zinc-900 border border-zinc-300/80 dark:border-zinc-800 rounded-3xl p-6 shadow-sm hover:border-black dark:hover:border-zinc-600 transition">
+                    <h3 className="font-bold text-lg text-black dark:text-white mb-3 transition-colors">
                       My Approach
                     </h3>
-                    <p className="text-sm text-zinc-600 dark:text-zinc-300 leading-relaxed transition-colors">
+                    <p className="text-sm text-zinc-900 dark:text-zinc-300 leading-relaxed transition-colors">
                       I emphasize clean code structure, object-oriented principles, responsive layouts, and modern front-end practices in every academic project.
                     </p>
                   </div>
@@ -760,73 +869,73 @@ export default function App() {
               </div>
 
               <Reveal delay={400}>
-                <div className="bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 rounded-3xl p-6 shadow-sm">
-                  <h3 className="font-bold text-lg text-indigo-950 dark:text-white mb-6 border-b border-zinc-100 dark:border-zinc-800 pb-3 transition-colors">
+                <div className="bg-white dark:bg-zinc-900 border border-zinc-300/80 dark:border-zinc-800 rounded-3xl p-6 shadow-sm">
+                  <h3 className="font-bold text-lg text-black dark:text-white mb-6 border-b border-zinc-200 dark:border-zinc-800 pb-3 transition-colors">
                     Personal Details
                   </h3>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-6 gap-x-8">
                     <div>
-                      <span className="text-[11px] uppercase tracking-wider font-semibold text-indigo-500 dark:text-sky-400 block transition-colors">
+                      <span className="text-[11px] uppercase tracking-wider font-bold text-zinc-700 dark:text-zinc-400 block transition-colors">
                         NAME
                       </span>
-                      <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200 mt-0.5 block">
+                      <span className="text-sm font-semibold text-black dark:text-zinc-200 mt-0.5 block">
                         Charles Jaycee L. Grico
                       </span>
                     </div>
 
                     <div>
-                      <span className="text-[11px] uppercase tracking-wider font-semibold text-indigo-500 dark:text-sky-400 block transition-colors">
+                      <span className="text-[11px] uppercase tracking-wider font-bold text-zinc-700 dark:text-zinc-400 block transition-colors">
                         LOCATION
                       </span>
-                      <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200 mt-0.5 block">
+                      <span className="text-sm font-semibold text-black dark:text-zinc-200 mt-0.5 block">
                         Philippines
                       </span>
                     </div>
 
                     <div>
-                      <span className="text-[11px] uppercase tracking-wider font-semibold text-indigo-500 dark:text-sky-400 block transition-colors">
+                      <span className="text-[11px] uppercase tracking-wider font-bold text-zinc-700 dark:text-zinc-400 block transition-colors">
                         DEGREE PROGRAM
                       </span>
-                      <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200 mt-0.5 block">
+                      <span className="text-sm font-semibold text-black dark:text-zinc-200 mt-0.5 block">
                         BSIT (Information Technology)
                       </span>
                     </div>
 
                     <div>
-                      <span className="text-[11px] uppercase tracking-wider font-semibold text-indigo-500 dark:text-sky-400 block transition-colors">
+                      <span className="text-[11px] uppercase tracking-wider font-bold text-zinc-700 dark:text-zinc-400 block transition-colors">
                         GWA
                       </span>
-                      <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200 mt-0.5 block">
+                      <span className="text-sm font-semibold text-black dark:text-zinc-200 mt-0.5 block">
                         1.00
                       </span>
                     </div>
 
                     <div>
-                      <span className="text-[11px] uppercase tracking-wider font-semibold text-indigo-500 dark:text-sky-400 block transition-colors">
+                      <span className="text-[11px] uppercase tracking-wider font-bold text-zinc-700 dark:text-zinc-400 block transition-colors">
                         EMAIL (ONE-CLICK COPY)
                       </span>
                       <button
                         onClick={handleCopyEmail}
                         title="Click to copy email"
-                        className="mt-0.5 inline-flex items-center gap-2 text-sm font-medium text-zinc-800 dark:text-zinc-200 hover:text-indigo-600 dark:hover:text-sky-400 transition-colors cursor-pointer group"
+                        className="mt-0.5 inline-flex items-center gap-2 text-sm font-semibold text-black dark:text-zinc-200 hover:opacity-75 transition-opacity cursor-pointer group"
                       >
                         <span>charlesjayceegrico@gmail.com</span>
                         {copiedEmail ? (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">
+                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-500/15 px-2 py-0.5 rounded-full">
                             <Check className="w-3 h-3" /> Copied!
                           </span>
                         ) : (
-                          <Copy className="w-3.5 h-3.5 text-zinc-400 group-hover:text-indigo-600 dark:group-hover:text-sky-400 transition-colors" />
+                          <Copy className="w-3.5 h-3.5 text-zinc-700 dark:text-zinc-400 group-hover:text-black dark:group-hover:text-white transition-colors" />
                         )}
                       </button>
                     </div>
 
                     <div>
-                      <span className="text-[11px] uppercase tracking-wider font-semibold text-indigo-500 dark:text-sky-400 block transition-colors">
+                      <span className="text-[11px] uppercase tracking-wider font-bold text-zinc-700 dark:text-zinc-400 block transition-colors">
                         EDUCATION
                       </span>
-                      <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200 mt-0.5 block">
+                      <span className="text-sm font-semibold text-black dark:text-zinc-200 mt-0.5 block">
                         Adamson University
                       </span>
                     </div>
@@ -835,18 +944,72 @@ export default function App() {
               </Reveal>
             </div>
           </div>
+
+          {/* Interactive Developer "Focus & Setup" Bento Grid */}
+          <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
+            <Reveal delay={150}>
+              <div className="h-full bg-white dark:bg-zinc-900 border border-zinc-300/80 dark:border-zinc-800 rounded-3xl p-6 shadow-sm hover:border-black dark:hover:border-zinc-600 transition-all group">
+                <div className="flex items-center justify-between mb-4">
+                  <span className="text-[10px] uppercase tracking-widest font-bold px-2.5 py-1 rounded-full bg-zinc-100 dark:bg-zinc-800 text-black dark:text-zinc-300">
+                    CURRENT FOCUS
+                  </span>
+                  <Cpu className="w-4 h-4 text-black dark:text-zinc-400 group-hover:rotate-12 transition-transform" />
+                </div>
+                <h4 className="font-bold text-base text-black dark:text-white mb-2">
+                  Full-Stack & OOP Architecture
+                </h4>
+                <p className="text-xs text-zinc-800 dark:text-zinc-400 leading-relaxed">
+                  Building role-based C# console applications and responsive React interfaces with clean, modular component logic.
+                </p>
+              </div>
+            </Reveal>
+
+            <Reveal delay={250}>
+              <div className="h-full bg-white dark:bg-zinc-900 border border-zinc-300/80 dark:border-zinc-800 rounded-3xl p-6 shadow-sm hover:border-black dark:hover:border-zinc-600 transition-all group">
+                <div className="flex items-center justify-between mb-4">
+                  <span className="text-[10px] uppercase tracking-widest font-bold px-2.5 py-1 rounded-full bg-zinc-100 dark:bg-zinc-800 text-black dark:text-zinc-300">
+                    DEV ENVIRONMENT
+                  </span>
+                  <Monitor className="w-4 h-4 text-black dark:text-zinc-400 group-hover:scale-110 transition-transform" />
+                </div>
+                <h4 className="font-bold text-base text-black dark:text-white mb-2">
+                  Visual Studio, Vite & Git
+                </h4>
+                <p className="text-xs text-zinc-800 dark:text-zinc-400 leading-relaxed">
+                  Daily workflow powered by Visual Studio for .NET C#, VS Code with React & Tailwind CSS, and GitHub version control.
+                </p>
+              </div>
+            </Reveal>
+
+            <Reveal delay={350}>
+              <div className="h-full bg-white dark:bg-zinc-900 border border-zinc-300/80 dark:border-zinc-800 rounded-3xl p-6 shadow-sm hover:border-black dark:hover:border-zinc-600 transition-all group">
+                <div className="flex items-center justify-between mb-4">
+                  <span className="text-[10px] uppercase tracking-widest font-bold px-2.5 py-1 rounded-full bg-zinc-100 dark:bg-zinc-800 text-black dark:text-zinc-300">
+                    MINDSET & STRATEGY
+                  </span>
+                  <Layers className="w-4 h-4 text-black dark:text-zinc-400 group-hover:-translate-y-0.5 transition-transform" />
+                </div>
+                <h4 className="font-bold text-base text-black dark:text-white mb-2">
+                  Iterative Problem Solving
+                </h4>
+                <p className="text-xs text-zinc-800 dark:text-zinc-400 leading-relaxed">
+                  Applying analytical ratio optimization—from competitive TCG deck-building to clean software algorithms and UI polish.
+                </p>
+              </div>
+            </Reveal>
+          </div>
         </section>
 
-        <div className="py-8 overflow-hidden bg-zinc-100/50 dark:bg-zinc-900/40 border-y border-zinc-200/60 dark:border-zinc-800/60 my-8">
-          <div className="whitespace-nowrap flex animate-marquee space-x-8 text-2xl sm:text-4xl font-extrabold tracking-tight text-indigo-950/20 dark:text-sky-400/20 select-none transition-colors">
+        <div className="py-8 overflow-hidden bg-zinc-200/50 dark:bg-zinc-900/40 border-y border-zinc-300/70 dark:border-zinc-800/60 my-8">
+          <div className="whitespace-nowrap flex animate-marquee space-x-8 text-2xl sm:text-4xl font-extrabold tracking-tight text-black/20 dark:text-white/15 select-none transition-colors">
             {Array(6).fill(0).map((_, i) => (
               <span key={i} className="inline-flex items-center space-x-6">
                 <span>Charles Jaycee</span>
-                <span className="text-indigo-400/40 dark:text-sky-500/40">•</span>
+                <span>•</span>
                 <span>BSIT Student</span>
-                <span className="text-indigo-400/40 dark:text-sky-500/40">•</span>
+                <span>•</span>
                 <span>Adamson University</span>
-                <span className="text-indigo-400/40 dark:text-sky-500/40">•</span>
+                <span>•</span>
               </span>
             ))}
           </div>
@@ -855,38 +1018,38 @@ export default function App() {
         <section id="educational" className="max-w-5xl mx-auto px-6 py-16">
           <Reveal>
             <div className="text-center space-y-2 mb-14">
-              <span className="text-xs uppercase tracking-[0.25em] font-semibold text-indigo-600 dark:text-sky-400 transition-colors">
+              <span className="text-xs uppercase tracking-[0.25em] font-bold text-zinc-700 dark:text-zinc-400 transition-colors">
                 CAREER & ACADEMIC PATH
               </span>
-              <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight text-indigo-950 dark:text-white transition-colors">
+              <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight text-black dark:text-white transition-colors">
                 Academic & Tech Experience
               </h2>
             </div>
           </Reveal>
 
-          <div className="relative border-l-2 border-indigo-200 dark:border-zinc-800 ml-4 md:ml-32 space-y-12 transition-colors">
+          <div className="relative border-l-2 border-zinc-300 dark:border-zinc-800 ml-4 md:ml-32 space-y-12 transition-colors">
             {experiences.map((exp, index) => (
               <Reveal key={index} delay={index * 150}>
                 <div className="relative pl-8 md:pl-10 group">
-                  <div className="absolute -left-[9px] top-1.5 w-4 h-4 rounded-full bg-white dark:bg-zinc-950 border-2 border-indigo-600 dark:border-sky-400 group-hover:scale-125 transition-all" />
-                  <div className="md:absolute md:-left-36 md:top-1.5 text-xs font-bold text-indigo-600 dark:text-sky-400 uppercase tracking-wider mb-2 md:mb-0 transition-colors">
+                  <div className="absolute -left-[9px] top-1.5 w-4 h-4 rounded-full bg-white dark:bg-zinc-950 border-2 border-black dark:border-white group-hover:scale-125 transition-all" />
+                  <div className="md:absolute md:-left-36 md:top-1.5 text-xs font-bold text-black dark:text-zinc-400 uppercase tracking-wider mb-2 md:mb-0 transition-colors">
                     {exp.year}
                   </div>
-                  <div className="bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 rounded-3xl p-6 sm:p-8 shadow-sm hover:shadow-md transition">
-                    <h3 className="text-xl font-bold text-indigo-950 dark:text-white transition-colors">
+                  <div className="bg-white dark:bg-zinc-900 border border-zinc-300/80 dark:border-zinc-800 rounded-3xl p-6 sm:p-8 shadow-sm hover:shadow-md transition">
+                    <h3 className="text-xl font-bold text-black dark:text-white transition-colors">
                       {exp.role}
                     </h3>
-                    <span className="text-xs font-semibold tracking-wider text-indigo-500 dark:text-sky-400 uppercase block mt-1 mb-4 transition-colors">
+                    <span className="text-xs font-bold tracking-wider text-zinc-700 dark:text-zinc-400 uppercase block mt-1 mb-4 transition-colors">
                       {exp.company}
                     </span>
-                    <p className="text-sm text-zinc-600 dark:text-zinc-300 leading-relaxed mb-6 transition-colors">
+                    <p className="text-sm text-zinc-900 dark:text-zinc-300 leading-relaxed mb-6 transition-colors">
                       {exp.desc}
                     </p>
-                    <div className="flex flex-wrap gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800/80">
+                    <div className="flex flex-wrap gap-2 pt-2 border-t border-zinc-200 dark:border-zinc-800/80">
                       {exp.tech.map((t, idx) => (
                         <span 
                           key={idx}
-                          className="px-3 py-1 rounded-full bg-indigo-50/70 dark:bg-zinc-800 text-[11px] font-semibold text-indigo-700 dark:text-sky-300 border border-indigo-200/50 dark:border-zinc-700/50 transition-colors"
+                          className="px-3 py-1 rounded-full bg-zinc-100 dark:bg-zinc-800 text-[11px] font-semibold text-black dark:text-zinc-200 border border-zinc-300/70 dark:border-zinc-700/50 transition-colors"
                         >
                           {t}
                         </span>
@@ -902,10 +1065,10 @@ export default function App() {
         <section id="skills" className="max-w-5xl mx-auto px-6 py-16">
           <Reveal>
             <div className="text-center space-y-2 mb-14">
-              <span className="text-xs uppercase tracking-[0.25em] font-semibold text-indigo-600 dark:text-sky-400 transition-colors">
+              <span className="text-xs uppercase tracking-[0.25em] font-bold text-zinc-700 dark:text-zinc-400 transition-colors">
                 SKILLS & TOOLS (HOVER OR TAP FOR DETAILS)
               </span>
-              <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight text-indigo-950 dark:text-white transition-colors">
+              <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight text-black dark:text-white transition-colors">
                 My Tech Stack
               </h2>
             </div>
@@ -915,10 +1078,10 @@ export default function App() {
             <div>
               <Reveal>
                 <div className="mb-6">
-                  <h3 className="text-lg font-bold text-indigo-950 dark:text-white transition-colors">
+                  <h3 className="text-lg font-bold text-black dark:text-white transition-colors">
                     Front-End & Web Development
                   </h3>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                  <p className="text-xs text-zinc-800 dark:text-zinc-400 mt-0.5">
                     Core technologies I use to build modern, responsive, and component-based user interfaces.
                   </p>
                 </div>
@@ -931,25 +1094,25 @@ export default function App() {
                     <Reveal key={idx} delay={idx * 75}>
                       <div
                         onClick={() => setActiveSkill(isSelected ? null : item.name)}
-                        className="bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 rounded-2xl p-5 flex flex-col justify-between shadow-sm hover:border-indigo-400 dark:hover:border-sky-400/60 transition-all duration-300 group cursor-pointer"
+                        className="bg-white dark:bg-zinc-900 border border-zinc-300/80 dark:border-zinc-800 rounded-2xl p-5 flex flex-col justify-between shadow-sm hover:border-black dark:hover:border-white transition-all duration-300 group cursor-pointer"
                       >
                         <div className="flex items-center space-x-3.5">
-                          <div className="w-11 h-11 rounded-xl bg-indigo-50 dark:bg-zinc-800 flex items-center justify-center text-indigo-600 dark:text-sky-400 group-hover:scale-110 transition-all shrink-0">
+                          <div className="w-11 h-11 rounded-xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-black dark:text-white group-hover:scale-110 transition-all shrink-0">
                             <item.icon className="w-5 h-5" />
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between">
-                              <span className="text-sm font-bold text-zinc-800 dark:text-zinc-100">
+                              <span className="text-sm font-bold text-black dark:text-zinc-100">
                                 {item.name}
                               </span>
-                              <span className="text-xs font-bold text-indigo-600 dark:text-sky-400">
+                              <span className="text-xs font-bold text-black dark:text-zinc-300">
                                 {item.level}%
                               </span>
                             </div>
                             {/* Animated Proficiency Bar */}
-                            <div className="w-full h-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden mt-2">
+                            <div className="w-full h-1.5 bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden mt-2">
                               <div
-                                className="h-full bg-indigo-600 dark:bg-sky-400 rounded-full transition-all duration-700 ease-out"
+                                className="h-full bg-black dark:bg-white rounded-full transition-all duration-700 ease-out"
                                 style={{ width: `${item.level}%` }}
                               />
                             </div>
@@ -960,11 +1123,11 @@ export default function App() {
                         <div
                           className={`overflow-hidden transition-all duration-300 ${
                             isSelected
-                              ? 'max-h-20 opacity-100 mt-3 pt-2.5 border-t border-zinc-100 dark:border-zinc-800'
-                              : 'max-h-0 opacity-0 group-hover:max-h-20 group-hover:opacity-100 group-hover:mt-3 group-hover:pt-2.5 group-hover:border-t group-hover:border-zinc-100 dark:group-hover:border-zinc-800'
+                              ? 'max-h-20 opacity-100 mt-3 pt-2.5 border-t border-zinc-200 dark:border-zinc-800'
+                              : 'max-h-0 opacity-0 group-hover:max-h-20 group-hover:opacity-100 group-hover:mt-3 group-hover:pt-2.5 group-hover:border-t group-hover:border-zinc-200 dark:group-hover:border-zinc-800'
                           }`}
                         >
-                          <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                          <p className="text-[11px] text-zinc-800 dark:text-zinc-400 leading-relaxed">
                             {item.note}
                           </p>
                         </div>
@@ -978,10 +1141,10 @@ export default function App() {
             <div>
               <Reveal>
                 <div className="mb-6">
-                  <h3 className="text-lg font-bold text-indigo-950 dark:text-white transition-colors">
+                  <h3 className="text-lg font-bold text-black dark:text-white transition-colors">
                     Software Engineering & Programming
                   </h3>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                  <p className="text-xs text-zinc-800 dark:text-zinc-400 mt-0.5">
                     Programming languages, data structures, and foundational computer science principles.
                   </p>
                 </div>
@@ -994,25 +1157,25 @@ export default function App() {
                     <Reveal key={idx} delay={idx * 75}>
                       <div
                         onClick={() => setActiveSkill(isSelected ? null : item.name)}
-                        className="bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 rounded-2xl p-5 flex flex-col justify-between shadow-sm hover:border-indigo-400 dark:hover:border-sky-400/60 transition-all duration-300 group cursor-pointer"
+                        className="bg-white dark:bg-zinc-900 border border-zinc-300/80 dark:border-zinc-800 rounded-2xl p-5 flex flex-col justify-between shadow-sm hover:border-black dark:hover:border-white transition-all duration-300 group cursor-pointer"
                       >
                         <div className="flex items-center space-x-3.5">
-                          <div className="w-11 h-11 rounded-xl bg-indigo-50 dark:bg-zinc-800 flex items-center justify-center text-indigo-600 dark:text-sky-400 group-hover:scale-110 transition-all shrink-0">
+                          <div className="w-11 h-11 rounded-xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-black dark:text-white group-hover:scale-110 transition-all shrink-0">
                             <item.icon className="w-5 h-5" />
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between">
-                              <span className="text-sm font-bold text-zinc-800 dark:text-zinc-100">
+                              <span className="text-sm font-bold text-black dark:text-zinc-100">
                                 {item.name}
                               </span>
-                              <span className="text-xs font-bold text-indigo-600 dark:text-sky-400">
+                              <span className="text-xs font-bold text-black dark:text-zinc-300">
                                 {item.level}%
                               </span>
                             </div>
                             {/* Animated Proficiency Bar */}
-                            <div className="w-full h-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden mt-2">
+                            <div className="w-full h-1.5 bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden mt-2">
                               <div
-                                className="h-full bg-indigo-600 dark:bg-sky-400 rounded-full transition-all duration-700 ease-out"
+                                className="h-full bg-black dark:bg-white rounded-full transition-all duration-700 ease-out"
                                 style={{ width: `${item.level}%` }}
                               />
                             </div>
@@ -1023,11 +1186,11 @@ export default function App() {
                         <div
                           className={`overflow-hidden transition-all duration-300 ${
                             isSelected
-                              ? 'max-h-20 opacity-100 mt-3 pt-2.5 border-t border-zinc-100 dark:border-zinc-800'
-                              : 'max-h-0 opacity-0 group-hover:max-h-20 group-hover:opacity-100 group-hover:mt-3 group-hover:pt-2.5 group-hover:border-t group-hover:border-zinc-100 dark:group-hover:border-zinc-800'
+                              ? 'max-h-20 opacity-100 mt-3 pt-2.5 border-t border-zinc-200 dark:border-zinc-800'
+                              : 'max-h-0 opacity-0 group-hover:max-h-20 group-hover:opacity-100 group-hover:mt-3 group-hover:pt-2.5 group-hover:border-t group-hover:border-zinc-200 dark:group-hover:border-zinc-800'
                           }`}
                         >
-                          <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                          <p className="text-[11px] text-zinc-800 dark:text-zinc-400 leading-relaxed">
                             {item.note}
                           </p>
                         </div>
@@ -1043,10 +1206,10 @@ export default function App() {
         <section id="projects" className="max-w-5xl mx-auto px-6 py-16">
           <Reveal>
             <div className="text-center space-y-2 mb-14">
-              <span className="text-xs uppercase tracking-[0.25em] font-semibold text-indigo-600 dark:text-sky-400 transition-colors">
+              <span className="text-xs uppercase tracking-[0.25em] font-bold text-zinc-700 dark:text-zinc-400 transition-colors">
                 PORTFOLIO
               </span>
-              <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight text-indigo-950 dark:text-white transition-colors">
+              <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight text-black dark:text-white transition-colors">
                 Selected Works
               </h2>
             </div>
@@ -1055,7 +1218,7 @@ export default function App() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {projects.map((proj, index) => (
               <Reveal key={proj.id} delay={index * 150}>
-                <div className="h-full bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 rounded-3xl overflow-hidden flex flex-col shadow-sm hover:shadow-lg transition duration-300">
+                <div className="h-full bg-white dark:bg-zinc-900 border border-zinc-300/80 dark:border-zinc-800 rounded-3xl overflow-hidden flex flex-col shadow-sm hover:shadow-lg transition duration-300">
                   <div className={`h-48 bg-gradient-to-br ${proj.imageBg} p-5 flex flex-col justify-between text-white relative group overflow-hidden`}>
                     <div className="flex items-center justify-between z-10">
                       <span className="text-[10px] uppercase font-bold tracking-widest bg-white/10 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/20">
@@ -1064,7 +1227,7 @@ export default function App() {
                       <Code className="w-4 h-4 opacity-70" />
                     </div>
 
-                    <pre className="font-mono text-[11px] opacity-80 z-10 leading-relaxed overflow-hidden">
+                    <pre className="font-mono text-[11px] opacity-85 z-10 leading-relaxed overflow-hidden">
                       {proj.previewCode}
                     </pre>
 
@@ -1073,17 +1236,17 @@ export default function App() {
 
                   <div className="p-6 flex-1 flex flex-col justify-between space-y-4">
                     <div className="space-y-2">
-                      <h3 className="text-xl font-bold text-indigo-950 dark:text-white transition-colors">
+                      <h3 className="text-xl font-bold text-black dark:text-white transition-colors">
                         {proj.title}
                       </h3>
-                      <p className="text-sm text-zinc-600 dark:text-zinc-300 line-clamp-3 leading-relaxed transition-colors">
+                      <p className="text-sm text-zinc-900 dark:text-zinc-300 line-clamp-3 leading-relaxed transition-colors">
                         {proj.shortDesc}
                       </p>
                     </div>
 
                     <button
                       onClick={() => setSelectedProject(proj)}
-                      className="w-full py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 hover:border-indigo-500 dark:hover:border-sky-400 hover:bg-indigo-50/50 dark:hover:bg-zinc-800 text-indigo-700 dark:text-sky-300 font-semibold text-xs tracking-wider uppercase transition-all text-center cursor-pointer"
+                      className="w-full py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 hover:border-black dark:hover:border-white hover:bg-zinc-100 dark:hover:bg-zinc-800 text-black dark:text-white font-semibold text-xs tracking-wider uppercase transition-all text-center cursor-pointer"
                     >
                       VIEW DETAILS
                     </button>
@@ -1099,9 +1262,9 @@ export default function App() {
                 href="https://github.com/CharlesJaycee"
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center justify-center px-6 py-3 rounded-xl border border-zinc-300 dark:border-zinc-700 hover:border-indigo-500 dark:hover:border-sky-400 hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-800 dark:text-zinc-200 font-medium text-xs tracking-wider uppercase transition-all gap-2"
+                className="inline-flex items-center justify-center px-6 py-3 rounded-xl border border-zinc-400 dark:border-zinc-700 hover:border-black dark:hover:border-white bg-white/60 dark:bg-zinc-900/60 hover:bg-zinc-100 dark:hover:bg-zinc-900 text-black dark:text-zinc-200 font-semibold text-xs tracking-wider uppercase transition-all gap-2"
               >
-                VIEW MORE PROJECTS ON GITHUB <ExternalLink className="w-3.5 h-3.5 text-indigo-600 dark:text-sky-400" />
+                VIEW MORE PROJECTS ON GITHUB <ExternalLink className="w-3.5 h-3.5 text-black dark:text-white" />
               </a>
             </div>
           </Reveal>
@@ -1110,30 +1273,30 @@ export default function App() {
         <section id="contacts" className="max-w-3xl mx-auto px-6 py-16">
           <Reveal>
             <div className="text-center space-y-2 mb-12">
-              <span className="text-xs uppercase tracking-[0.25em] font-semibold text-indigo-600 dark:text-sky-400 transition-colors">
+              <span className="text-xs uppercase tracking-[0.25em] font-bold text-zinc-700 dark:text-zinc-400 transition-colors">
                 GET IN TOUCH
               </span>
-              <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight text-indigo-950 dark:text-white transition-colors">
+              <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight text-black dark:text-white transition-colors">
                 Contact Me
               </h2>
             </div>
           </Reveal>
 
           <Reveal delay={150}>
-            <div className="bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 rounded-3xl p-6 sm:p-10 shadow-sm">
+            <div className="bg-white dark:bg-zinc-900 border border-zinc-300/80 dark:border-zinc-800 rounded-3xl p-6 sm:p-10 shadow-sm">
               <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-                <h3 className="font-bold text-lg text-indigo-950 dark:text-white transition-colors">
+                <h3 className="font-bold text-lg text-black dark:text-white transition-colors">
                   Send an Email directly.
                 </h3>
 
                 <button
                   type="button"
                   onClick={handleCopyEmail}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-indigo-50 dark:bg-zinc-800 border border-indigo-200/60 dark:border-zinc-700 text-xs font-semibold text-indigo-700 dark:text-sky-300 hover:opacity-90 transition cursor-pointer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-zinc-100 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs font-semibold text-black dark:text-zinc-200 hover:opacity-80 transition cursor-pointer"
                 >
                   {copiedEmail ? (
                     <>
-                      <Check className="w-3.5 h-3.5 text-emerald-500" />
+                      <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                       <span>Copied Email!</span>
                     </>
                   ) : (
@@ -1147,27 +1310,27 @@ export default function App() {
 
               {formStatus === 'success' ? (
                 <div className="py-12 text-center space-y-3">
-                  <div className="w-12 h-12 rounded-full bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 mx-auto flex items-center justify-center">
+                  <div className="w-12 h-12 rounded-full bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 mx-auto flex items-center justify-center">
                     <CheckCircle2 className="w-6 h-6" />
                   </div>
-                  <h4 className="text-lg font-bold text-zinc-900 dark:text-white">
+                  <h4 className="text-lg font-bold text-black dark:text-white">
                     Message Sent!
                   </h4>
-                  <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                  <p className="text-sm text-zinc-800 dark:text-zinc-400">
                     Thank you for reaching out to Charles Jaycee. Your message has been delivered and will be replied to shortly.
                   </p>
                 </div>
               ) : (
                 <form onSubmit={handleContactSubmit} className="space-y-5">
                   {formStatus === 'error' && (
-                    <div className="p-3.5 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 text-xs flex items-center gap-2">
+                    <div className="p-3.5 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 text-red-700 dark:text-red-400 text-xs flex items-center gap-2">
                       <AlertCircle className="w-4 h-4 shrink-0" />
                       <span>Failed to send message. Please try again or email charlesjayceegrico@gmail.com directly.</span>
                     </div>
                   )}
 
                   <div>
-                    <label className="block text-xs uppercase font-semibold text-indigo-600 dark:text-sky-400 mb-2 transition-colors">
+                    <label className="block text-xs uppercase font-bold text-black dark:text-zinc-300 mb-2 transition-colors">
                       NAME
                     </label>
                     <input
@@ -1176,12 +1339,12 @@ export default function App() {
                       placeholder="John Doe"
                       value={formData.name}
                       onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      className="w-full px-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-950/50 text-zinc-900 dark:text-white placeholder-zinc-400 text-sm focus:outline-none focus:border-indigo-500 dark:focus:border-sky-400 transition"
+                      className="w-full px-4 py-3 rounded-xl border border-zinc-300 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50 text-black dark:text-white placeholder-zinc-500 text-sm focus:outline-none focus:border-black dark:focus:border-white transition"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs uppercase font-semibold text-indigo-600 dark:text-sky-400 mb-2 transition-colors">
+                    <label className="block text-xs uppercase font-bold text-black dark:text-zinc-300 mb-2 transition-colors">
                       EMAIL
                     </label>
                     <input
@@ -1190,12 +1353,12 @@ export default function App() {
                       placeholder="you@example.com"
                       value={formData.email}
                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      className="w-full px-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-950/50 text-zinc-900 dark:text-white placeholder-zinc-400 text-sm focus:outline-none focus:border-indigo-500 dark:focus:border-sky-400 transition"
+                      className="w-full px-4 py-3 rounded-xl border border-zinc-300 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50 text-black dark:text-white placeholder-zinc-500 text-sm focus:outline-none focus:border-black dark:focus:border-white transition"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs uppercase font-semibold text-indigo-600 dark:text-sky-400 mb-2 transition-colors">
+                    <label className="block text-xs uppercase font-bold text-black dark:text-zinc-300 mb-2 transition-colors">
                       MESSAGE
                     </label>
                     <textarea
@@ -1204,14 +1367,14 @@ export default function App() {
                       placeholder="Your message here..."
                       value={formData.message}
                       onChange={(e) => setFormData({ ...formData, message: e.target.value })}
-                      className="w-full px-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-950/50 text-zinc-900 dark:text-white placeholder-zinc-400 text-sm focus:outline-none focus:border-indigo-500 dark:focus:border-sky-400 transition resize-none"
+                      className="w-full px-4 py-3 rounded-xl border border-zinc-300 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50 text-black dark:text-white placeholder-zinc-500 text-sm focus:outline-none focus:border-black dark:focus:border-white transition resize-none"
                     />
                   </div>
 
                   <button
                     type="submit"
                     disabled={formStatus === 'sending'}
-                    className="w-full py-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 dark:bg-sky-400 dark:hover:bg-sky-300 dark:text-zinc-950 text-white font-bold text-xs uppercase tracking-widest transition-all shadow-md cursor-pointer disabled:opacity-50"
+                    className="w-full py-4 rounded-xl bg-black hover:bg-zinc-800 dark:bg-white dark:hover:bg-zinc-200 text-white dark:text-black font-bold text-xs uppercase tracking-widest transition-all shadow-md cursor-pointer disabled:opacity-50"
                   >
                     {formStatus === 'sending' ? 'SENDING MESSAGE...' : 'SEND MESSAGE'}
                   </button>
@@ -1222,30 +1385,30 @@ export default function App() {
         </section>
       </main>
 
-      <footer className="border-t border-zinc-200/80 dark:border-zinc-800/80 py-8 text-center text-xs text-zinc-500 dark:text-zinc-400 relative z-10">
+      <footer className="border-t border-zinc-300/80 dark:border-zinc-800/80 py-8 text-center text-xs text-zinc-800 dark:text-zinc-400 relative z-10">
         <div className="max-w-5xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p>© {new Date().getFullYear()} Charles Jaycee L. Grico. All rights reserved.</p>
+          <p className="font-medium">© {new Date().getFullYear()} Charles Jaycee L. Grico. All rights reserved.</p>
           <div className="flex items-center space-x-4">
-            <button onClick={() => scrollToSection('home')} className="hover:text-indigo-600 dark:hover:text-sky-400 transition-colors cursor-pointer">Back to top ↑</button>
+            <button onClick={() => scrollToSection('home')} className="font-semibold hover:underline transition-colors cursor-pointer">Back to top ↑</button>
           </div>
         </div>
       </footer>
 
       {selectedProject && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl max-w-xl w-full p-6 sm:p-8 shadow-2xl relative overflow-hidden space-y-6">
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-800 rounded-3xl max-w-xl w-full p-6 sm:p-8 shadow-2xl relative overflow-hidden space-y-6">
             <button 
               onClick={() => setSelectedProject(null)}
-              className="absolute top-5 right-5 p-2 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition cursor-pointer"
+              className="absolute top-5 right-5 p-2 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:text-black dark:hover:text-white transition cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
 
             <div className="space-y-1">
-              <span className="text-[10px] uppercase font-bold tracking-widest text-indigo-600 dark:text-sky-400">
+              <span className="text-[10px] uppercase font-bold tracking-widest text-zinc-700 dark:text-zinc-400">
                 PROJECT PREVIEW
               </span>
-              <h3 className="text-2xl font-extrabold text-indigo-950 dark:text-white">
+              <h3 className="text-2xl font-extrabold text-black dark:text-white">
                 {selectedProject.title}
               </h3>
             </div>
@@ -1254,17 +1417,17 @@ export default function App() {
               <pre className="whitespace-pre-wrap">{selectedProject.previewCode}</pre>
             </div>
 
-            <p className="text-sm text-zinc-600 dark:text-zinc-300 leading-relaxed">
+            <p className="text-sm text-zinc-900 dark:text-zinc-300 leading-relaxed">
               {selectedProject.fullDesc}
             </p>
 
             <div>
-              <span className="text-xs font-semibold text-indigo-600 dark:text-sky-400 uppercase tracking-wider block mb-2">
+              <span className="text-xs font-bold text-black dark:text-zinc-300 uppercase tracking-wider block mb-2">
                 TECHNOLOGIES USED
               </span>
               <div className="flex flex-wrap gap-2">
                 {selectedProject.tags.map((tag, i) => (
-                  <span key={i} className="px-3 py-1 rounded-full bg-indigo-50 dark:bg-zinc-800 text-xs font-semibold text-indigo-700 dark:text-sky-300">
+                  <span key={i} className="px-3 py-1 rounded-full bg-zinc-100 dark:bg-zinc-800 text-xs font-semibold text-black dark:text-zinc-200 border border-zinc-300/60 dark:border-zinc-700">
                     {tag}
                   </span>
                 ))}
@@ -1274,7 +1437,7 @@ export default function App() {
             <div className="pt-2 flex justify-end">
               <button
                 onClick={() => setSelectedProject(null)}
-                className="px-5 py-2.5 rounded-xl bg-indigo-600 dark:bg-sky-400 text-white dark:text-zinc-950 font-semibold text-xs tracking-wider uppercase transition cursor-pointer"
+                className="px-5 py-2.5 rounded-xl bg-black dark:bg-white text-white dark:text-black font-semibold text-xs tracking-wider uppercase transition cursor-pointer"
               >
                 Close Preview
               </button>
@@ -1288,7 +1451,7 @@ export default function App() {
         onClick={() => scrollToSection('home')}
         aria-label="Back to Top"
         title="Back to Top"
-        className={`fixed bottom-6 left-6 z-40 p-3 rounded-full bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md border border-zinc-200 dark:border-zinc-800 shadow-xl text-indigo-600 dark:text-sky-400 hover:scale-110 transition-all duration-300 cursor-pointer ${
+        className={`fixed bottom-6 left-6 z-40 p-3 rounded-full bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md border border-zinc-300 dark:border-zinc-800 shadow-xl text-black dark:text-white hover:scale-110 transition-all duration-300 cursor-pointer ${
           showBackToTop ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6 pointer-events-none'
         }`}
       >
@@ -1300,38 +1463,38 @@ export default function App() {
         {!chatOpen && (
           <button
             onClick={() => setChatOpen(true)}
-            className="flex items-center space-x-2.5 px-4 py-3 rounded-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-xl hover:shadow-2xl transition duration-300 group cursor-pointer"
+            className="flex items-center space-x-2.5 px-4 py-3 rounded-full bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-800 shadow-xl hover:shadow-2xl transition duration-300 group cursor-pointer"
           >
-            <div className="w-7 h-7 rounded-full bg-indigo-50 dark:bg-zinc-800 flex items-center justify-center text-indigo-600 dark:text-sky-400 group-hover:scale-110 transition-transform">
+            <div className="w-7 h-7 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-black dark:text-white group-hover:scale-110 transition-transform">
               <Sparkles className="w-4 h-4" />
             </div>
-            <span className="text-xs font-bold text-indigo-950 dark:text-white pr-1 transition-colors">
+            <span className="text-xs font-bold text-black dark:text-white pr-1 transition-colors">
               Jay Assistant
             </span>
           </button>
         )}
 
         {chatOpen && (
-          <div className="w-[340px] sm:w-[380px] h-[500px] bg-white dark:bg-zinc-900 border border-zinc-200/90 dark:border-zinc-800 rounded-3xl shadow-2xl flex flex-col overflow-hidden transition-all duration-300">
-            <div className="p-4 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between bg-zinc-50/50 dark:bg-zinc-950/50">
+          <div className="w-[340px] sm:w-[380px] h-[500px] bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-800 rounded-3xl shadow-2xl flex flex-col overflow-hidden transition-all duration-300">
+            <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between bg-zinc-50 dark:bg-zinc-950/50">
               <div className="flex items-center space-x-3">
-                <div className="w-8 h-8 rounded-xl bg-indigo-600 dark:bg-sky-400 text-white dark:text-zinc-950 flex items-center justify-center font-bold text-xs">
+                <div className="w-8 h-8 rounded-xl bg-black dark:bg-white text-white dark:text-black flex items-center justify-center font-bold text-xs">
                   AI
                 </div>
                 <div>
-                  <h4 className="text-sm font-bold text-indigo-950 dark:text-white leading-tight">
+                  <h4 className="text-sm font-bold text-black dark:text-white leading-tight">
                     Jay Assistant
                   </h4>
                   <div className="flex items-center space-x-1.5 mt-0.5">
                     <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    <span className="text-[10px] text-zinc-400 font-medium">Smart Mode</span>
+                    <span className="text-[10px] text-zinc-700 dark:text-zinc-400 font-medium">Smart Mode</span>
                   </div>
                 </div>
               </div>
 
               <button
                 onClick={() => setChatOpen(false)}
-                className="p-1.5 rounded-full hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition cursor-pointer"
+                className="p-1.5 rounded-full hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:text-black dark:hover:text-white transition cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1346,8 +1509,8 @@ export default function App() {
                   <div
                     className={`max-w-[84%] px-4 py-3 rounded-2xl leading-relaxed ${
                       msg.sender === 'user'
-                        ? 'bg-indigo-600 text-white dark:bg-sky-400 dark:text-zinc-950 rounded-br-xs font-medium shadow-sm'
-                        : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 rounded-bl-xs border border-zinc-200/60 dark:border-zinc-700/60'
+                        ? 'bg-black text-white dark:bg-white dark:text-black rounded-br-xs font-medium shadow-sm'
+                        : 'bg-zinc-100 dark:bg-zinc-800 text-black dark:text-zinc-200 rounded-bl-xs border border-zinc-200 dark:border-zinc-700/60'
                     }`}
                   >
                     <p>{msg.text}</p>
@@ -1361,7 +1524,7 @@ export default function App() {
                             handleCopyEmail();
                           }
                         }}
-                        className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white dark:bg-zinc-900 border border-indigo-200 dark:border-sky-500/30 text-[11px] font-bold text-indigo-600 dark:text-sky-400 hover:opacity-90 transition cursor-pointer"
+                        className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 text-[11px] font-bold text-black dark:text-white hover:opacity-85 transition cursor-pointer"
                       >
                         <span>
                           {msg.action.type === 'copy' && copiedEmail
@@ -1372,23 +1535,23 @@ export default function App() {
                       </button>
                     )}
                   </div>
-                  <span className="text-[9px] text-zinc-400 mt-1 px-1">
+                  <span className="text-[9px] text-zinc-600 dark:text-zinc-400 mt-1 px-1">
                     {msg.time}
                   </span>
                 </div>
               ))}
 
               {isTyping && (
-                <div className="flex items-center space-x-1 px-4 py-2 rounded-2xl bg-zinc-100 dark:bg-zinc-800 text-zinc-400 w-16">
-                  <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce" />
-                  <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce delay-100" />
-                  <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce delay-200" />
+                <div className="flex items-center space-x-1 px-4 py-2 rounded-2xl bg-zinc-100 dark:bg-zinc-800 text-zinc-500 w-16">
+                  <span className="w-1.5 h-1.5 bg-zinc-500 rounded-full animate-bounce" />
+                  <span className="w-1.5 h-1.5 bg-zinc-500 rounded-full animate-bounce delay-100" />
+                  <span className="w-1.5 h-1.5 bg-zinc-500 rounded-full animate-bounce delay-200" />
                 </div>
               )}
               <div ref={chatBottomRef} />
             </div>
 
-            <div className="px-3 py-2 bg-zinc-50/50 dark:bg-zinc-950/30 border-t border-zinc-100 dark:border-zinc-800 flex items-center space-x-2 overflow-x-auto">
+            <div className="px-3 py-2 bg-zinc-50 dark:bg-zinc-950/30 border-t border-zinc-200 dark:border-zinc-800 flex items-center space-x-2 overflow-x-auto">
               {[
                 'who are you',
                 'skills',
@@ -1398,25 +1561,25 @@ export default function App() {
                 <button
                   key={idx}
                   onClick={() => processAssistantQuery(chip)}
-                  className="px-2.5 py-1 rounded-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-[10px] font-semibold text-indigo-600 dark:text-sky-300 hover:bg-indigo-50 dark:hover:bg-zinc-700 whitespace-nowrap transition cursor-pointer"
+                  className="px-2.5 py-1 rounded-full bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-[10px] font-semibold text-black dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700 whitespace-nowrap transition cursor-pointer"
                 >
                   {chip}
                 </button>
               ))}
             </div>
 
-            <form onSubmit={handleSendMessage} className="p-3 border-t border-zinc-100 dark:border-zinc-800 flex items-center space-x-2">
+            <form onSubmit={handleSendMessage} className="p-3 border-t border-zinc-200 dark:border-zinc-800 flex items-center space-x-2">
               <input
                 type="text"
                 placeholder="Ask me anything..."
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
-                className="flex-1 px-3.5 py-2.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white placeholder-zinc-400 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:focus:ring-sky-400"
+                className="flex-1 px-3.5 py-2.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-black dark:text-white placeholder-zinc-500 text-xs focus:outline-none focus:ring-1 focus:ring-black dark:focus:ring-white"
               />
               <button
                 type="submit"
                 disabled={!chatInput.trim()}
-                className="p-2.5 rounded-full bg-indigo-600 dark:bg-sky-400 text-white dark:text-zinc-950 disabled:opacity-40 hover:opacity-90 transition cursor-pointer"
+                className="p-2.5 rounded-full bg-black dark:bg-white text-white dark:text-black disabled:opacity-40 hover:opacity-90 transition cursor-pointer"
               >
                 <Send className="w-3.5 h-3.5" />
               </button>
